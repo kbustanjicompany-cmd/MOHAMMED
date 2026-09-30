@@ -150,7 +150,7 @@ for r in rows:
     ax.text(cx, cy - 0.55, f'{r["avg"]:.2f}', ha="center", va="center", fontsize=6.5, color="#003366")
 ax.set_aspect("equal"); ax.axis("off")
 ax.set_title("Square number (red) and average level in m (blue) — yellow = corner at hangar level 1115.55, orange = corner interpolated", fontsize=14)
-fig.savefig("average_levels.png", bbox_inches="tight"); plt.close(fig)
+fig.savefig("average_levels.png", bbox_inches="tight"); fig.savefig("average_levels.pdf", bbox_inches="tight"); plt.close(fig)
 
 fig, ax = plt.subplots(figsize=(22, 24), dpi=110)
 ax.plot(*area_poly.exterior.xy, color="magenta", lw=2, zorder=3)
@@ -166,7 +166,7 @@ ax.set_aspect("equal"); ax.axis("off")
 cut = sum(r["cut"] for r in rows); fill = sum(r["fill"] for r in rows)
 ax.set_title(f"Excavation to {FORMATION_LEVEL}: square no. / depth / volume — red = cut, blue = fill\n"
              f"Total cut = {cut:,.1f} m³   Total fill = {fill:,.1f} m³", fontsize=14)
-fig.savefig("excavation.png", bbox_inches="tight"); plt.close(fig)
+fig.savefig("excavation.png", bbox_inches="tight"); fig.savefig("excavation.pdf", bbox_inches="tight"); plt.close(fig)
 print(f"cut={cut:.2f} fill={fill:.2f} cut squares={sum(r['cut'] > 0 for r in rows)} fill squares={sum(r['fill'] > 0 for r in rows)}")
 
 a = np.array([r["avg"] for r in rows]); w = np.array([r["area"] for r in rows])

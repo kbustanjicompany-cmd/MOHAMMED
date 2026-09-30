@@ -62,7 +62,7 @@ HANGAR_OFFSET = 1.0
 hangar_fp = next(Polygon([p[:2] for p in e.get_points()]) for e in msp.query('LWPOLYLINE[layer=="0"]')
                  if e.closed and e.dxf.color == 5 and len(e) == 7)
 hangar_zone = hangar_fp.buffer(HANGAR_OFFSET, join_style=2)
-# small buildings (bathroom room and canteen): the other closed blue polylines on layer 0
+# small buildings (bathroom and cafeteria): the other closed blue polylines on layer 0
 # that carry a "room" label, also offset 1 m all round and excluded
 from shapely.geometry import Point
 room_labels = [Point(t.dxf.insert.x, t.dxf.insert.y) for t in msp.query('TEXT MTEXT')
@@ -70,6 +70,10 @@ room_labels = [Point(t.dxf.insert.x, t.dxf.insert.y) for t in msp.query('TEXT MT
 rooms = [P for P in (Polygon([p[:2] for p in e.get_points()]) for e in msp.query('LWPOLYLINE[layer=="0"]')
                      if e.closed and e.dxf.color == 5)
          if any(P.contains(l) for l in room_labels)]
+# guard room: not drawn in this DXF; its outline is taken from the four Survey.td2 points at
+# its corners (the "guard room" points of the architectural plan), about 5.2 m x 4.9 m
+guard_room = Polygon([(353773.47, 355954.98), (353778.69, 355954.96), (353778.82, 355960.19), (353773.65, 355959.85)])
+rooms = rooms + [guard_room]
 rooms_zone = unary_union([r.buffer(HANGAR_OFFSET, join_style=2) for r in rooms])
 excluded = unary_union([culvert, hangar_zone, rooms_zone])
 work_poly = area_poly.difference(excluded)
@@ -171,7 +175,7 @@ for row in [["Formation level (m)", FORMATION_LEVEL],
             ["Method", "Grid method: square average = mean of 4 corner levels; volume = depth x area inside hatch"],
             ["Culvert area excluded (m²)", round(area_poly.intersection(culvert).area, 2)],
             [f"Hangar + {HANGAR_OFFSET:g} m area excluded (m²)", round(area_poly.intersection(hangar_zone).area, 2)],
-            [f"Rooms (bathroom / canteen) + {HANGAR_OFFSET:g} m area excluded (m²)", round(area_poly.intersection(rooms_zone).area, 2)],
+            [f"Rooms (bathroom, cafeteria, guard room) + {HANGAR_OFFSET:g} m area excluded (m²)", round(area_poly.intersection(rooms_zone).area, 2)],
             ["Total excluded (overlaps counted once) (m²)", round(area_poly.intersection(excluded).area, 2)],
             ["Hangar area", f"Unlabeled grid points under the hangar taken as {HANGAR_LEVEL}"]]:
     sm.append(row)

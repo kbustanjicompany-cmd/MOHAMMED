@@ -36,6 +36,7 @@ room_labels = [Point(t.dxf.insert.x, t.dxf.insert.y) for t in msp.query('TEXT MT
 blue = [Polygon([p[:2] for p in e.get_points()]) for e in msp.query('LWPOLYLINE[layer=="0"]')
         if e.closed and e.dxf.color == 5]
 rooms = [P for P in blue if any(P.contains(l) for l in room_labels)]
+rooms.append(Polygon([(353773.47, 355954.98), (353778.69, 355954.96), (353778.82, 355960.19), (353773.65, 355959.85)]))  # guard room
 hangar_fp = next(P for P in blue if len(P.exterior.coords) == 8)
 excluded = unary_union([r.buffer(OFFSET, join_style=2) for r in rooms] + [hangar_fp.buffer(OFFSET, join_style=2)])
 work_poly = area_poly.difference(excluded)

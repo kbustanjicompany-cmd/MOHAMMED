@@ -26,10 +26,12 @@ ax.plot(*hangar_fp.exterior.xy, color="blue", lw=1, ls="--", zorder=19)
 for i, r in enumerate(rooms, 1):
     rz = r.buffer(HANGAR_OFFSET, join_style=2)
     ax.fill(*rz.exterior.xy, fc=(0.55, 0.2, 0.7, 0.25), ec="#7030a0", lw=2.5, hatch="xx", zorder=19,
-            label=f"Rooms (bathroom / canteen) + {HANGAR_OFFSET:g} m (excluded)" if i == 1 else None)
+            label=f"Bathroom, cafeteria, guard room + {HANGAR_OFFSET:g} m (excluded)" if i == 1 else None)
     ax.plot(*r.exterior.xy, color="#7030a0", lw=1, ls="--", zorder=19)
     rx, ry = r.centroid.coords[0]
-    ax.annotate(f"ROOM {i} + {HANGAR_OFFSET:g} m\n{r.area:.1f} → {rz.area:.1f} m²", (rx, ry), xytext=(rx - 8 + 12 * i, ry + 10),
+    name = ["BATHROOM", "CAFETERIA", "GUARD ROOM"][i - 1]
+    off = [(-6, 12), (4, 12), (14, -10)][i - 1]
+    ax.annotate(f"{name} + {HANGAR_OFFSET:g} m\n{r.area:.1f} → {rz.area:.1f} m²", (rx, ry), xytext=(rx + off[0], ry + off[1]),
                 fontsize=11, weight="bold", color="#7030a0", arrowprops=dict(arrowstyle="->", color="#7030a0"), zorder=30)
 hzx, hzy = hangar_fp.centroid.coords[0]
 ax.annotate(f"HANGAR + {HANGAR_OFFSET:g} m\n{hangar_zone.area:.1f} m²", (hzx + 5, hzy), xytext=(hzx + 22, hzy - 18),

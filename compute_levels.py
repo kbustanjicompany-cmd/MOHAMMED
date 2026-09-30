@@ -56,7 +56,13 @@ south_break = sorted(min(breaks, key=lambda p: p[0][1]), key=lambda q: q[0])   #
 north_break = sorted(max(breaks, key=lambda p: p[0][1]), key=lambda q: -q[0])  # east -> west
 culvert_ext = Polygon(west + south_break + east + north_break).buffer(0)
 culvert = unary_union([culvert_head, culvert_ext])
-work_poly = area_poly.difference(culvert)
+# hangar footprint: closed blue polyline on layer 0 around "H: 1115.55", offset 1 m on its
+# whole perimeter; excluded from all volumes like the culvert
+HANGAR_OFFSET = 1.0
+hangar_fp = next(Polygon([p[:2] for p in e.get_points()]) for e in msp.query('LWPOLYLINE[layer=="0"]')
+                 if e.closed and e.dxf.color == 5 and len(e) == 7)
+hangar_zone = hangar_fp.buffer(HANGAR_OFFSET, join_style=2)
+work_poly = area_poly.difference(culvert).difference(hangar_zone)
 
 # TIN for grid points without a label: TIN nodes + the known labels
 tin = [tuple(e.dxf.insert) for e in msp.query('INSERT[layer=="V-NODE"]')]
@@ -113,7 +119,7 @@ for j in j_rng:
 # ---- Excel
 wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Average levels"
 hdr = ["Square No.", "Avg level (m)", "Top-left", "Top-right", "Bottom-right", "Bottom-left",
-       "Area inside hatch excl. culvert (m²)", "Corners at hangar level", "Corners interpolated (TIN)", "X min", "Y min",
+       "Area inside hatch excl. culvert & hangar (m²)", "Corners at hangar level", "Corners interpolated (TIN)", "X min", "Y min",
        "Depth to formation (m)", "Cut volume (m³)", "Fill volume (m³)"]
 ws.append(hdr)
 for c in ws[1]:
@@ -154,6 +160,9 @@ for row in [["Formation level (m)", FORMATION_LEVEL],
             ["Squares with fill", sum(r["fill"] > 0 for r in rows)],
             ["Method", "Grid method: square average = mean of 4 corner levels; volume = depth x area inside hatch"],
             ["Culvert area excluded (m²)", round(area_poly.intersection(culvert).area, 2)],
+            [f"Hangar + {HANGAR_OFFSET:g} m area excluded (m²)", round(area_poly.intersection(hangar_zone).area, 2)],
+            ["Total excluded (culvert + hangar, overlap counted once) (m²)",
+             round(area_poly.intersection(unary_union([culvert, hangar_zone])).area, 2)],
             ["Hangar area", f"Unlabeled grid points under the hangar taken as {HANGAR_LEVEL}"]]:
     sm.append(row)
 for c in sm["A"]: c.font = Font(bold=True)
@@ -165,8 +174,11 @@ wb.save(f"average_levels_{SUFFIX}.xlsx")
 fig, ax = plt.subplots(figsize=(22, 24), dpi=110)
 ax.fill(*area_poly.exterior.xy, color="#e8eef7", zorder=0)
 ax.plot(*area_poly.exterior.xy, color="magenta", lw=2, zorder=3)
-ax.fill(*culvert.exterior.xy, fc=(1, 1, 1, 0.55), ec="#555555", hatch="///", lw=1.2, zorder=2)
-ax.text(*culvert_ext.centroid.coords[0], "CULVERT\n(excluded)", ha="center", va="center", fontsize=9, weight="bold", color="black", rotation=-78, zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
+ax.fill(*hangar_zone.exterior.xy, fc=(1, 1, 1, 0.55), ec="#1f4e9c", hatch="\\\\", lw=1.5, zorder=2)
+ax.fill(*culvert.exterior.xy, fc=(1, 1, 1, 0.0), ec="#555555", hatch="///", lw=1.2, zorder=2)
+ax.text(*hangar_fp.centroid.coords[0], f"HANGAR + {HANGAR_OFFSET:g} m  (excluded)", ha="center", va="center", fontsize=10,
+        weight="bold", color="#1f4e9c", rotation=-78, zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
+ax.text(*culvert_head.centroid.coords[0], "CULVERT\n(excluded)", ha="center", va="center", fontsize=9, weight="bold", color="black", zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
 for r in rows:
     ax.add_patch(plt.Rectangle((r["x"], r["y"]), STEP, STEP, fill=bool(r["hangar"] or r["interp"]),
                                fc="#f8cbad" if r["interp"] else "#fff2cc", ec="red", lw=0.6, zorder=1))
@@ -179,8 +191,11 @@ fig.savefig("average_levels.png", bbox_inches="tight"); fig.savefig("average_lev
 
 fig, ax = plt.subplots(figsize=(22, 24), dpi=110)
 ax.plot(*area_poly.exterior.xy, color="magenta", lw=2, zorder=3)
-ax.fill(*culvert.exterior.xy, fc=(1, 1, 1, 0.55), ec="#555555", hatch="///", lw=1.2, zorder=2)
-ax.text(*culvert_ext.centroid.coords[0], "CULVERT\n(excluded)", ha="center", va="center", fontsize=9, weight="bold", color="black", rotation=-78, zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
+ax.fill(*hangar_zone.exterior.xy, fc=(1, 1, 1, 0.55), ec="#1f4e9c", hatch="\\\\", lw=1.5, zorder=2)
+ax.fill(*culvert.exterior.xy, fc=(1, 1, 1, 0.0), ec="#555555", hatch="///", lw=1.2, zorder=2)
+ax.text(*hangar_fp.centroid.coords[0], f"HANGAR + {HANGAR_OFFSET:g} m  (excluded)", ha="center", va="center", fontsize=10,
+        weight="bold", color="#1f4e9c", rotation=-78, zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
+ax.text(*culvert_head.centroid.coords[0], "CULVERT\n(excluded)", ha="center", va="center", fontsize=9, weight="bold", color="black", zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
 for r in rows:
     d = r["avg"] - FORMATION_LEVEL
     ax.add_patch(plt.Rectangle((r["x"], r["y"]), STEP, STEP, fc="#f4cccc" if d > 0 else "#cfe2f3",

@@ -29,7 +29,7 @@ for i, r in enumerate(rooms, 1):
             label=f"Bathroom, cafeteria, guard room + {HANGAR_OFFSET:g} m (excluded)" if i == 1 else None)
     ax.plot(*r.exterior.xy, color="#7030a0", lw=1, ls="--", zorder=19)
     rx, ry = r.centroid.coords[0]
-    name = ["BATHROOM", "CAFETERIA", "GUARD ROOM"][i - 1]
+    name = list(named_rooms)[i - 1].upper()
     off = [(-6, 12), (4, 12), (14, -10)][i - 1]
     ax.annotate(f"{name} + {HANGAR_OFFSET:g} m\n{r.area:.1f} → {rz.area:.1f} m²", (rx, ry), xytext=(rx + off[0], ry + off[1]),
                 fontsize=11, weight="bold", color="#7030a0", arrowprops=dict(arrowstyle="->", color="#7030a0"), zorder=30)

@@ -26,19 +26,13 @@ grid = {(round((x - X0) / STEP), round((y - Y0) / STEP)): z for (x, y), z in lab
 
 pl = next(e for e in msp.query('LWPOLYLINE[layer=="0"]') if e.closed and e.dxf.color == 4)
 area_poly = Polygon([p[:2] for p in pl.get_points()])
-# excluded: small buildings (bathroom room / canteen) = closed blue polylines on layer 0 with a
-# "room" label, and the hangar (closed blue polyline around "H: 1115.55"), each offset 1 m all round
-from shapely.geometry import Point
+# excluded: hangar, bathroom, cafeteria and guard room (outlines from BUILDINGS.dxf),
+# each offset 1 m all round
 from shapely.ops import unary_union
+from buildings import hangar as hangar_fp, rooms as named_rooms
 OFFSET = 1.0
-room_labels = [Point(t.dxf.insert.x, t.dxf.insert.y) for t in msp.query('TEXT MTEXT')
-               if (t.text if t.dxftype() == "MTEXT" else t.dxf.text).strip().lower() == "room"]
-blue = [Polygon([p[:2] for p in e.get_points()]) for e in msp.query('LWPOLYLINE[layer=="0"]')
-        if e.closed and e.dxf.color == 5]
-rooms = [P for P in blue if any(P.contains(l) for l in room_labels)]
-rooms.append(Polygon([(353773.47, 355954.98), (353778.69, 355954.96), (353778.82, 355960.19), (353773.65, 355959.85)]))  # guard room
-hangar_fp = next(P for P in blue if len(P.exterior.coords) == 8)
-excluded = unary_union([r.buffer(OFFSET, join_style=2) for r in rooms] + [hangar_fp.buffer(OFFSET, join_style=2)])
+excluded = unary_union([r.buffer(OFFSET, join_style=2) for r in named_rooms.values()]
+                       + [hangar_fp.buffer(OFFSET, join_style=2)])
 work_poly = area_poly.difference(excluded)
 
 tin = [tuple(e.dxf.insert) for e in msp.query('INSERT[layer=="V-NODE"]')]
@@ -104,7 +98,7 @@ for r in rows:
 for ez in getattr(excluded, "geoms", [excluded]):
     if ez.intersection(area_poly).area > 0:
         ax.fill(*ez.exterior.xy, fc=(1, 1, 1, 0.55), ec="#7030a0", hatch="xx", lw=1.5, zorder=2)
-        ax.text(*ez.intersection(area_poly).centroid.coords[0], f"ROOM + {OFFSET:g} m\n(excluded)", ha="center",
+        ax.text(*ez.intersection(area_poly).centroid.coords[0], f"CAFETERIA + {OFFSET:g} m\n(excluded)", ha="center",
                 va="center", fontsize=8, weight="bold", color="#7030a0", zorder=5,
                 bbox=dict(fc="white", ec="none", alpha=0.8))
 ax.set_aspect("equal"); ax.axis("off")
@@ -124,7 +118,7 @@ for r in rows:
 for ez in getattr(excluded, "geoms", [excluded]):
     if ez.intersection(area_poly).area > 0:
         ax.fill(*ez.exterior.xy, fc=(1, 1, 1, 0.55), ec="#7030a0", hatch="xx", lw=1.5, zorder=2)
-        ax.text(*ez.intersection(area_poly).centroid.coords[0], f"ROOM + {OFFSET:g} m\n(excluded)", ha="center",
+        ax.text(*ez.intersection(area_poly).centroid.coords[0], f"CAFETERIA + {OFFSET:g} m\n(excluded)", ha="center",
                 va="center", fontsize=8, weight="bold", color="#7030a0", zorder=5,
                 bbox=dict(fc="white", ec="none", alpha=0.8))
 ax.set_aspect("equal"); ax.axis("off")

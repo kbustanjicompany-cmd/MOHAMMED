@@ -10,7 +10,7 @@ for j in range(len(ys)-1):
     f=w[y0+2:y1-1,x0+2:x1-1].mean() if x1-x0>4 and y1-y0>4 else 0
     row.append(f>0.15)
   idx=[i for i,v in enumerate(row) if v]
-  if idx and j>0:
+  if idx and j>1:
     for i in range(idx[0],idx[-1]+1): cells.append((j,i))
 img=img.resize((img.width*2,img.height*2),Image.LANCZOS); d=ImageDraw.Draw(img)
 font=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',17)

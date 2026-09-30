@@ -9,6 +9,8 @@ Reads HATCHED_AREA.dxf:
   - any other unlabeled grid point is interpolated from the TIN nodes (V-NODE)
 Square average = mean of its 4 corner levels.
 Numbering: top row to bottom row, left to right.
+Excavation per square = max(avg - FORMATION_LEVEL, 0) x area inside the hatch
+(fill = the same for squares below the formation level).
 """
 import ezdxf, numpy as np
 from shapely.geometry import Polygon, box
@@ -20,6 +22,7 @@ import matplotlib.pyplot as plt
 
 STEP, TEXT_OFFSET = 3.0, 0.2427
 HANGAR_LEVEL = 1115.55
+FORMATION_LEVEL = 1114.85  # excavate down to this level
 doc = ezdxf.readfile("HATCHED_AREA.dxf"); msp = doc.modelspace()
 
 labels = {}
@@ -88,7 +91,8 @@ for j in j_rng:
 # ---- Excel
 wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Average levels"
 hdr = ["Square No.", "Avg level (m)", "Top-left", "Top-right", "Bottom-right", "Bottom-left",
-       "Area inside hatch (m²)", "Corners at hangar level", "Corners interpolated (TIN)", "X min", "Y min"]
+       "Area inside hatch (m²)", "Corners at hangar level", "Corners interpolated (TIN)", "X min", "Y min",
+       "Depth to formation (m)", "Cut volume (m³)", "Fill volume (m³)"]
 ws.append(hdr)
 for c in ws[1]:
     c.font = Font(bold=True, color="FFFFFF"); c.fill = PatternFill("solid", fgColor="305496")
@@ -97,19 +101,41 @@ yellow = PatternFill("solid", fgColor="FFF2CC"); orange = PatternFill("solid", f
 for r in rows:
     ws.append([r["no"], round(r["avg"], 3), *[round(v, 2) for v in r["h"]], round(r["area"], 2),
                r["hangar"], r["interp"], round(r["x"], 3), round(r["y"], 3)])
+    k = ws.max_row
+    d = r["avg"] - FORMATION_LEVEL
+    r["cut"], r["fill"] = max(d, 0) * r["area"], max(-d, 0) * r["area"]
+    ws[f"L{k}"], ws[f"M{k}"], ws[f"N{k}"] = round(d, 3), round(r["cut"], 2), round(r["fill"], 2)
     if r["hangar"] or r["interp"]:
         for c in ws[ws.max_row]: c.fill = orange if r["interp"] else yellow
 n = len(rows) + 1
 ws.append([])
 ws.append(["Squares", len(rows)])
-ws.append(["Total area (m²)", f"=SUM(G2:G{n})"])
-ws.append(["Simple mean of averages", f"=ROUND(AVERAGE(B2:B{n}),3)"])
-ws.append(["Area-weighted mean level", f"=ROUND(SUMPRODUCT(B2:B{n},G2:G{n})/SUM(G2:G{n}),3)"])
+ws.append(["Total cut (m³)", round(sum(r["cut"] for r in rows), 2)])
+ws.append(["Total fill (m³)", round(sum(r["fill"] for r in rows), 2)])
+ws.append(["Total area (m²)", round(sum(r["area"] for r in rows), 2)])
+ws.append(["Simple mean of averages", round(sum(r["avg"] for r in rows) / len(rows), 3)])
+ws.append(["Area-weighted mean level", round(sum(r["avg"] * r["area"] for r in rows) / sum(r["area"] for r in rows), 3)])
 ws.append([f"Yellow rows: one or more corners inside the hangar area, taken as {HANGAR_LEVEL}."])
 ws.append(["Orange rows: one corner had no EL label and was interpolated from the survey TIN."])
-for col, w in zip("ABCDEFGHIJK", [11, 13, 11, 11, 13, 12, 14, 12, 13, 14, 14]):
+for col, w in zip("ABCDEFGHIJKLMN", [11, 13, 11, 11, 13, 12, 14, 12, 13, 14, 14, 13, 13, 13]):
     ws.column_dimensions[col].width = w
 ws.freeze_panes = "A2"
+sm = wb.create_sheet("Summary", 0)
+cut, fill = sum(r["cut"] for r in rows), sum(r["fill"] for r in rows)
+for row in [["Formation level (m)", FORMATION_LEVEL],
+            ["Squares", len(rows)],
+            ["Total area (m²)", round(sum(r["area"] for r in rows), 2)],
+            ["Total cut / excavation (m³)", round(cut, 2)],
+            ["Total fill (m³)", round(fill, 2)],
+            ["Net (cut - fill) (m³)", round(cut - fill, 2)],
+            ["Squares with cut", sum(r["cut"] > 0 for r in rows)],
+            ["Squares with fill", sum(r["fill"] > 0 for r in rows)],
+            ["Method", "Grid method: square average = mean of 4 corner levels; volume = depth x area inside hatch"],
+            ["Hangar area", f"Unlabeled grid points under the hangar taken as {HANGAR_LEVEL}"]]:
+    sm.append(row)
+for c in sm["A"]: c.font = Font(bold=True)
+sm["B1"].fill = PatternFill("solid", fgColor="FFFF00")
+sm.column_dimensions["A"].width = 44; sm.column_dimensions["B"].width = 18
 wb.save("average_levels.xlsx")
 
 # ---- Drawing
@@ -125,6 +151,23 @@ for r in rows:
 ax.set_aspect("equal"); ax.axis("off")
 ax.set_title("Square number (red) and average level in m (blue) — yellow = corner at hangar level 1115.55, orange = corner interpolated", fontsize=14)
 fig.savefig("average_levels.png", bbox_inches="tight"); plt.close(fig)
+
+fig, ax = plt.subplots(figsize=(22, 24), dpi=110)
+ax.plot(*area_poly.exterior.xy, color="magenta", lw=2, zorder=3)
+for r in rows:
+    d = r["avg"] - FORMATION_LEVEL
+    ax.add_patch(plt.Rectangle((r["x"], r["y"]), STEP, STEP, fc="#f4cccc" if d > 0 else "#cfe2f3",
+                               ec="grey", lw=0.5, zorder=1))
+    cx, cy = r["x"] + STEP / 2, r["y"] + STEP / 2
+    ax.text(cx, cy + 0.75, str(r["no"]), ha="center", va="center", fontsize=7, weight="bold", color="#b00000")
+    ax.text(cx, cy, f'{d:+.2f} m', ha="center", va="center", fontsize=6, color="#222222")
+    ax.text(cx, cy - 0.75, f'{r["cut"] if d > 0 else -r["fill"]:.1f} m³', ha="center", va="center", fontsize=6, color="#003366")
+ax.set_aspect("equal"); ax.axis("off")
+cut = sum(r["cut"] for r in rows); fill = sum(r["fill"] for r in rows)
+ax.set_title(f"Excavation to {FORMATION_LEVEL}: square no. / depth / volume — red = cut, blue = fill\n"
+             f"Total cut = {cut:,.1f} m³   Total fill = {fill:,.1f} m³", fontsize=14)
+fig.savefig("excavation.png", bbox_inches="tight"); plt.close(fig)
+print(f"cut={cut:.2f} fill={fill:.2f} cut squares={sum(r['cut'] > 0 for r in rows)} fill squares={sum(r['fill'] > 0 for r in rows)}")
 
 a = np.array([r["avg"] for r in rows]); w = np.array([r["area"] for r in rows])
 print(f"squares={len(rows)} area={w.sum():.1f} min={a.min():.2f} max={a.max():.2f} "

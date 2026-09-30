@@ -39,10 +39,23 @@ hatch = next(h for h in msp.query('HATCH[layer=="0"]') if h.dxf.pattern_name == 
 outer = max((p for p in hatch.paths if hasattr(p, "vertices") and len(p.vertices) > 2),
             key=lambda p: Polygon([v[:2] for v in p.vertices]).area)
 area_poly = Polygon([(v[0], v[1]) for v in outer.vertices])
-# culvert (box culvert): closed magenta polyline on layer 0 around the "box cl" survey points;
-# its area is excluded from the volumes (square numbering is unchanged)
-culvert = next(Polygon([p[:2] for p in e.get_points()]) for e in msp.query('LWPOLYLINE[layer=="0"]')
-               if e.closed and e.dxf.color == 6 and len(e) == 8)
+# culvert (box culvert) zone, excluded from the volumes (square numbering is unchanged):
+#  - culvert outline: closed magenta polyline on layer 0 around the "box cl" survey points
+#  - its extension through the building: the two long S-SYMPOLS lines running south from it,
+#    closed at both ends by the zig-zag break-line polylines
+from shapely.ops import unary_union
+culvert_head = next(Polygon([p[:2] for p in e.get_points()]) for e in msp.query('LWPOLYLINE[layer=="0"]')
+                    if e.closed and e.dxf.color == 6 and len(e) == 8)
+sym = [[tuple(p[:2]) for p in e.get_points()] for e in msp.query('LWPOLYLINE[layer=="S-SYMPOLS"]')]
+long_lines = sorted((p for p in sym if len(p) in (3, 4) and max(y for _, y in p) - min(y for _, y in p) > 40),
+                    key=lambda p: min(x for x, _ in p))
+breaks = [p for p in sym if len(p) == 6 and max(x for x, _ in p) - min(x for x, _ in p) > 5]
+west = sorted(long_lines[0], key=lambda q: -q[1])          # north -> south
+east = sorted(long_lines[1], key=lambda q: q[1])           # south -> north
+south_break = sorted(min(breaks, key=lambda p: p[0][1]), key=lambda q: q[0])   # west -> east
+north_break = sorted(max(breaks, key=lambda p: p[0][1]), key=lambda q: -q[0])  # east -> west
+culvert_ext = Polygon(west + south_break + east + north_break).buffer(0)
+culvert = unary_union([culvert_head, culvert_ext])
 work_poly = area_poly.difference(culvert)
 
 # TIN for grid points without a label: TIN nodes + the known labels
@@ -152,8 +165,8 @@ wb.save(f"average_levels_{SUFFIX}.xlsx")
 fig, ax = plt.subplots(figsize=(22, 24), dpi=110)
 ax.fill(*area_poly.exterior.xy, color="#e8eef7", zorder=0)
 ax.plot(*area_poly.exterior.xy, color="magenta", lw=2, zorder=3)
-ax.fill(*culvert.exterior.xy, fc="none", ec="black", hatch="xxx", lw=1.2, zorder=4)
-ax.text(*culvert.centroid.coords[0], "CULVERT\n(excluded)", ha="center", va="center", fontsize=8, weight="bold", zorder=5)
+ax.fill(*culvert.exterior.xy, fc=(1, 1, 1, 0.55), ec="#555555", hatch="///", lw=1.2, zorder=2)
+ax.text(*culvert_ext.centroid.coords[0], "CULVERT\n(excluded)", ha="center", va="center", fontsize=9, weight="bold", color="black", rotation=-78, zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
 for r in rows:
     ax.add_patch(plt.Rectangle((r["x"], r["y"]), STEP, STEP, fill=bool(r["hangar"] or r["interp"]),
                                fc="#f8cbad" if r["interp"] else "#fff2cc", ec="red", lw=0.6, zorder=1))
@@ -166,8 +179,8 @@ fig.savefig("average_levels.png", bbox_inches="tight"); fig.savefig("average_lev
 
 fig, ax = plt.subplots(figsize=(22, 24), dpi=110)
 ax.plot(*area_poly.exterior.xy, color="magenta", lw=2, zorder=3)
-ax.fill(*culvert.exterior.xy, fc="none", ec="black", hatch="xxx", lw=1.2, zorder=4)
-ax.text(*culvert.centroid.coords[0], "CULVERT\n(excluded)", ha="center", va="center", fontsize=8, weight="bold", zorder=5)
+ax.fill(*culvert.exterior.xy, fc=(1, 1, 1, 0.55), ec="#555555", hatch="///", lw=1.2, zorder=2)
+ax.text(*culvert_ext.centroid.coords[0], "CULVERT\n(excluded)", ha="center", va="center", fontsize=9, weight="bold", color="black", rotation=-78, zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
 for r in rows:
     d = r["avg"] - FORMATION_LEVEL
     ax.add_patch(plt.Rectangle((r["x"], r["y"]), STEP, STEP, fc="#f4cccc" if d > 0 else "#cfe2f3",

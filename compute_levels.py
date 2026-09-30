@@ -22,7 +22,10 @@ import matplotlib.pyplot as plt
 
 STEP, TEXT_OFFSET = 3.0, 0.2427
 HANGAR_LEVEL = 1115.55
-FORMATION_LEVEL = 1114.85  # excavate down to this level
+import sys
+# excavate down to this level; pass another one on the command line, e.g. python3 compute_levels.py 1113
+FORMATION_LEVEL = float(sys.argv[1]) if len(sys.argv) > 1 else 1114.85
+SUFFIX = f"{FORMATION_LEVEL:g}"
 doc = ezdxf.readfile("HATCHED_AREA.dxf"); msp = doc.modelspace()
 
 labels = {}
@@ -36,6 +39,11 @@ hatch = next(h for h in msp.query('HATCH[layer=="0"]') if h.dxf.pattern_name == 
 outer = max((p for p in hatch.paths if hasattr(p, "vertices") and len(p.vertices) > 2),
             key=lambda p: Polygon([v[:2] for v in p.vertices]).area)
 area_poly = Polygon([(v[0], v[1]) for v in outer.vertices])
+# culvert (box culvert): closed magenta polyline on layer 0 around the "box cl" survey points;
+# its area is excluded from the volumes (square numbering is unchanged)
+culvert = next(Polygon([p[:2] for p in e.get_points()]) for e in msp.query('LWPOLYLINE[layer=="0"]')
+               if e.closed and e.dxf.color == 6 and len(e) == 8)
+work_poly = area_poly.difference(culvert)
 
 # TIN for grid points without a label: TIN nodes + the known labels
 tin = [tuple(e.dxf.insert) for e in msp.query('INSERT[layer=="V-NODE"]')]
@@ -78,9 +86,10 @@ rows = []
 for j in j_rng:
     for i in i_rng:
         x, y = X0 + i * STEP, Y0 + j * STEP
-        a = area_poly.intersection(box(x, y, x + STEP, y + STEP)).area
-        if a < 0.01:
+        cell = box(x, y, x + STEP, y + STEP)
+        if area_poly.intersection(cell).area < 0.01:
             continue
+        a = work_poly.intersection(cell).area
         corners = [(i, j + 1), (i + 1, j + 1), (i + 1, j), (i, j)]  # TL TR BR BL
         lv = [level(*c) for c in corners]
         rows.append(dict(no=len(rows) + 1, i=i, j=j, x=x, y=y, area=a,
@@ -91,7 +100,7 @@ for j in j_rng:
 # ---- Excel
 wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Average levels"
 hdr = ["Square No.", "Avg level (m)", "Top-left", "Top-right", "Bottom-right", "Bottom-left",
-       "Area inside hatch (m²)", "Corners at hangar level", "Corners interpolated (TIN)", "X min", "Y min",
+       "Area inside hatch excl. culvert (m²)", "Corners at hangar level", "Corners interpolated (TIN)", "X min", "Y min",
        "Depth to formation (m)", "Cut volume (m³)", "Fill volume (m³)"]
 ws.append(hdr)
 for c in ws[1]:
@@ -131,17 +140,20 @@ for row in [["Formation level (m)", FORMATION_LEVEL],
             ["Squares with cut", sum(r["cut"] > 0 for r in rows)],
             ["Squares with fill", sum(r["fill"] > 0 for r in rows)],
             ["Method", "Grid method: square average = mean of 4 corner levels; volume = depth x area inside hatch"],
+            ["Culvert area excluded (m²)", round(area_poly.intersection(culvert).area, 2)],
             ["Hangar area", f"Unlabeled grid points under the hangar taken as {HANGAR_LEVEL}"]]:
     sm.append(row)
 for c in sm["A"]: c.font = Font(bold=True)
 sm["B1"].fill = PatternFill("solid", fgColor="FFFF00")
 sm.column_dimensions["A"].width = 44; sm.column_dimensions["B"].width = 18
-wb.save("average_levels.xlsx")
+wb.save(f"average_levels_{SUFFIX}.xlsx")
 
 # ---- Drawing
 fig, ax = plt.subplots(figsize=(22, 24), dpi=110)
 ax.fill(*area_poly.exterior.xy, color="#e8eef7", zorder=0)
 ax.plot(*area_poly.exterior.xy, color="magenta", lw=2, zorder=3)
+ax.fill(*culvert.exterior.xy, fc="none", ec="black", hatch="xxx", lw=1.2, zorder=4)
+ax.text(*culvert.centroid.coords[0], "CULVERT\n(excluded)", ha="center", va="center", fontsize=8, weight="bold", zorder=5)
 for r in rows:
     ax.add_patch(plt.Rectangle((r["x"], r["y"]), STEP, STEP, fill=bool(r["hangar"] or r["interp"]),
                                fc="#f8cbad" if r["interp"] else "#fff2cc", ec="red", lw=0.6, zorder=1))
@@ -154,6 +166,8 @@ fig.savefig("average_levels.png", bbox_inches="tight"); fig.savefig("average_lev
 
 fig, ax = plt.subplots(figsize=(22, 24), dpi=110)
 ax.plot(*area_poly.exterior.xy, color="magenta", lw=2, zorder=3)
+ax.fill(*culvert.exterior.xy, fc="none", ec="black", hatch="xxx", lw=1.2, zorder=4)
+ax.text(*culvert.centroid.coords[0], "CULVERT\n(excluded)", ha="center", va="center", fontsize=8, weight="bold", zorder=5)
 for r in rows:
     d = r["avg"] - FORMATION_LEVEL
     ax.add_patch(plt.Rectangle((r["x"], r["y"]), STEP, STEP, fc="#f4cccc" if d > 0 else "#cfe2f3",
@@ -166,7 +180,7 @@ ax.set_aspect("equal"); ax.axis("off")
 cut = sum(r["cut"] for r in rows); fill = sum(r["fill"] for r in rows)
 ax.set_title(f"Excavation to {FORMATION_LEVEL}: square no. / depth / volume — red = cut, blue = fill\n"
              f"Total cut = {cut:,.1f} m³   Total fill = {fill:,.1f} m³", fontsize=14)
-fig.savefig("excavation.png", bbox_inches="tight"); fig.savefig("excavation.pdf", bbox_inches="tight"); plt.close(fig)
+fig.savefig(f"excavation_{SUFFIX}.png", bbox_inches="tight"); fig.savefig(f"excavation_{SUFFIX}.pdf", bbox_inches="tight"); plt.close(fig)
 print(f"cut={cut:.2f} fill={fill:.2f} cut squares={sum(r['cut'] > 0 for r in rows)} fill squares={sum(r['fill'] > 0 for r in rows)}")
 
 a = np.array([r["avg"] for r in rows]); w = np.array([r["area"] for r in rows])

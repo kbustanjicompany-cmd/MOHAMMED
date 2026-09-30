@@ -23,21 +23,29 @@ ax.plot(*culvert_head.exterior.xy, color="darkred", lw=1, ls="--")
 ax.fill(*hangar_zone.exterior.xy, fc=(0.2, 0.4, 1, 0.18), ec="blue", lw=2.5, hatch="\\\\",
         label=f"Hangar + {HANGAR_OFFSET:g} m all round (excluded)", zorder=19)
 ax.plot(*hangar_fp.exterior.xy, color="blue", lw=1, ls="--", zorder=19)
+for i, r in enumerate(rooms, 1):
+    rz = r.buffer(HANGAR_OFFSET, join_style=2)
+    ax.fill(*rz.exterior.xy, fc=(0.55, 0.2, 0.7, 0.25), ec="#7030a0", lw=2.5, hatch="xx", zorder=19,
+            label=f"Rooms (bathroom / canteen) + {HANGAR_OFFSET:g} m (excluded)" if i == 1 else None)
+    ax.plot(*r.exterior.xy, color="#7030a0", lw=1, ls="--", zorder=19)
+    rx, ry = r.centroid.coords[0]
+    ax.annotate(f"ROOM {i} + {HANGAR_OFFSET:g} m\n{r.area:.1f} → {rz.area:.1f} m²", (rx, ry), xytext=(rx - 8 + 12 * i, ry + 10),
+                fontsize=11, weight="bold", color="#7030a0", arrowprops=dict(arrowstyle="->", color="#7030a0"), zorder=30)
 hzx, hzy = hangar_fp.centroid.coords[0]
-ax.annotate(f"HANGAR + {HANGAR_OFFSET:g} m\n{hangar_zone.area:.1f} m²", (hzx + 5, hzy), xytext=(hzx + 25, hzy + 25),
+ax.annotate(f"HANGAR + {HANGAR_OFFSET:g} m\n{hangar_zone.area:.1f} m²", (hzx + 5, hzy), xytext=(hzx + 22, hzy - 18),
             fontsize=12, weight="bold", color="blue", arrowprops=dict(arrowstyle="->", color="blue"), zorder=30)
 inside = culvert.intersection(area_poly).area
-excl = area_poly.intersection(unary_union([culvert, hangar_zone])).area
+excl = area_poly.intersection(excluded).area
 cx, cy = culvert_ext.centroid.coords[0]
 ax.annotate(f"CULVERT EXTENSION\n{culvert_ext.area:.1f} m²", (cx, cy), xytext=(cx - 38, cy - 10),
             fontsize=12, weight="bold", color="red", arrowprops=dict(arrowstyle="->", color="red"))
 hx, hy = culvert_head.centroid.coords[0]
 ax.annotate(f"CULVERT\n{culvert_head.area:.1f} m²", (hx, hy), xytext=(hx - 30, hy + 4),
             fontsize=12, weight="bold", color="red", arrowprops=dict(arrowstyle="->", color="red"))
-ax.set_aspect("equal", adjustable="box"); ax.set_xlim(353700, 353815); ax.set_ylim(355905, 355990); ax.axis("off")
+ax.set_aspect("equal", adjustable="box"); ax.set_xlim(353700, 353815); ax.set_ylim(355905, 355998); ax.axis("off")
 ax.legend(loc="lower left", fontsize=12)
-fig.suptitle(f"Excluded zones in hatched area 1: culvert {inside:.1f} m² + hangar(+{HANGAR_OFFSET:g} m) — "
-             f"total excluded {excl:.1f} m² (overlap counted once)",
+fig.suptitle(f"Excluded zones (culvert, hangar + {HANGAR_OFFSET:g} m, rooms + {HANGAR_OFFSET:g} m) — "
+             f"{excl:.1f} m² excluded from hatched area 1",
              fontsize=14, weight="bold")
 fig.savefig("culvert_plan.png", bbox_inches="tight"); fig.savefig("culvert_plan.pdf", bbox_inches="tight")
 print(f"culvert total={culvert.area:.1f} inside area1={inside:.1f} excluded total={excl:.1f}")

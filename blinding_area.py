@@ -24,6 +24,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill
 
 THICKNESS = 0.10                       # "100mm CONCRETE BLINDING" (drawing notes)
+PROJECTION = 0.10                      # blinding projects 10 cm beyond the concrete (measured on the plan)
 RES, GAP = 0.02, 0.30                  # raster size, gap bridging (m)
 X0, Y0, X1, Y1 = -50, -8, 30, 60       # foundation plan window (drawing units = m)
 GAP_FIXES = [((-33.56, 18.95), (-33.17, 17.75))]
@@ -81,6 +82,11 @@ for k, sl in enumerate(ndi.find_objects(lab), 1):
         pockets.append(k)
 blind = ~ndi.binary_dilation(np.isin(lab, list(outside) + pockets), structure=disk)
 total = blind.sum() * RES * RES
+# reinforced concrete footprint = blinding area pulled back by the 10 cm projection
+P = int(round(PROJECTION / RES))
+pdisk = np.hypot(*np.mgrid[-P:P + 1, -P:P + 1]) <= P
+rc = ndi.binary_erosion(blind, structure=pdisk)
+rc_total = rc.sum() * RES * RES
 
 wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Blinding"
 ws.append(["Item", "Value"])
@@ -89,6 +95,9 @@ for c in ws[1]:
 ws.append(["Blinding area (m²)", round(total, 2)])
 ws.append([f"Blinding thickness (m)", THICKNESS])
 ws.append(["Blinding volume (m³)", round(total * THICKNESS, 2)])
+ws.append([])
+ws.append(["Reinforced concrete footprint (m²)", round(rc_total, 2)])
+ws.append(["  = blinding area less its projection (m)", PROJECTION])
 ws.append(["Method", "area enclosed by S-BLINDING LINE in the foundation plan (footings, ground beams, rafts)"])
 for col, w in zip("AB", [24, 90]):
     ws.column_dimensions[col].width = w
@@ -97,11 +106,13 @@ wb.save("blinding_area.xlsx")
 fig, ax = plt.subplots(figsize=(16, 14), dpi=110)
 xs = np.linspace(X0, X1, W); ys = np.linspace(Y1, Y0, H)
 ax.contourf(xs, ys, blind.astype(float), levels=[0.5, 1.5], colors=["#f6b26b"], alpha=0.7)
+ax.contourf(xs, ys, rc.astype(float), levels=[0.5, 1.5], colors=["#9fb7d9"], alpha=0.8)
 for g in conc_lines: ax.plot(*g.xy, color="#00a0c0", lw=0.4)
 for g in blind_lines: ax.plot(*g.xy, color="red", lw=0.7)
 ax.set_xlim(X0, X1); ax.set_ylim(Y0, Y1); ax.set_aspect("equal"); ax.axis("off")
-ax.set_title(f"Blinding under foundations (footings, ground beams, rafts)\n"
-             f"Total area = {total:,.2f} m²   —   volume @ {THICKNESS * 100:g} cm = {total * THICKNESS:,.2f} m³",
+ax.set_title(f"Foundations (footings, ground beams, rafts)\n"
+             f"Blinding (orange ring + blue) = {total:,.2f} m²  (volume @ {THICKNESS * 100:g} cm = {total * THICKNESS:,.2f} m³)\n"
+             f"Reinforced concrete footprint (blue) = {rc_total:,.2f} m²",
              fontsize=14, weight="bold")
 fig.savefig("blinding_area.png", bbox_inches="tight"); fig.savefig("blinding_area.pdf", bbox_inches="tight")
-print(f"blinding area={total:.2f} m2 volume={total * THICKNESS:.2f} m3")
+print(f"blinding area={total:.2f} m2 volume={total * THICKNESS:.2f} m3  RC footprint={rc_total:.2f} m2")

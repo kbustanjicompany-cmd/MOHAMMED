@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 
 STEP, TEXT_OFFSET = 3.0, 0.2427
 HANGAR_LEVEL = 1115.55
-LEVEL_DEDUCTION = 0.15  # every ground level is taken 15 cm lower
+LEVEL_DEDUCTION = 0.25  # every ground level is taken 25 cm lower
 import sys
 # excavate down to this level; pass another one on the command line, e.g. python3 compute_levels.py 1113
 FORMATION_LEVEL = float(sys.argv[1]) if len(sys.argv) > 1 else 1114.85

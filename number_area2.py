@@ -18,7 +18,7 @@ import sys
 # excavate down to this level; pass another one on the command line, e.g. python3 number_area2.py 1114.85
 FORMATION_LEVEL = float(sys.argv[1]) if len(sys.argv) > 1 else 1120.9
 SUFFIX = f"{FORMATION_LEVEL:g}"
-LEVEL_DEDUCTION = 0.15  # every ground level is taken 15 cm lower
+LEVEL_DEDUCTION = 0.25  # every ground level is taken 25 cm lower
 doc = ezdxf.readfile("HATCHED_AREA.dxf"); msp = doc.modelspace()
 
 labels = {}

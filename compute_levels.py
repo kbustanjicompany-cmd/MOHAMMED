@@ -9,6 +9,7 @@ Reads HATCHED_AREA.dxf:
   - any other unlabeled grid point is interpolated from the TIN nodes (V-NODE)
 Square average = mean of its 4 corner levels.
 Numbering: top row to bottom row, left to right.
+All ground levels are lowered by LEVEL_DEDUCTION before averaging.
 Excavation per square = max(avg - FORMATION_LEVEL, 0) x area inside the hatch
 (fill = the same for squares below the formation level).
 """
@@ -22,6 +23,7 @@ import matplotlib.pyplot as plt
 
 STEP, TEXT_OFFSET = 3.0, 0.2427
 HANGAR_LEVEL = 1115.55
+LEVEL_DEDUCTION = 0.15  # every ground level is taken 15 cm lower
 import sys
 # excavate down to this level; pass another one on the command line, e.g. python3 compute_levels.py 1113
 FORMATION_LEVEL = float(sys.argv[1]) if len(sys.argv) > 1 else 1114.85
@@ -56,10 +58,10 @@ south_break = sorted(min(breaks, key=lambda p: p[0][1]), key=lambda q: q[0])   #
 north_break = sorted(max(breaks, key=lambda p: p[0][1]), key=lambda q: -q[0])  # east -> west
 culvert_ext = Polygon(west + south_break + east + north_break).buffer(0)
 culvert = unary_union([culvert_head, culvert_ext])
-# hangar, bathroom, cafeteria and guard room outlines (from BUILDINGS.dxf), each offset 1 m on
-# its whole perimeter and excluded from all volumes like the culvert
+# hangar, bathroom, cafeteria and guard room outlines (from BUILDINGS.dxf), used exactly as
+# drawn there (no extra offset) and excluded from all volumes like the culvert
 from buildings import hangar as hangar_fp, rooms as named_rooms
-HANGAR_OFFSET = 1.0
+HANGAR_OFFSET = 0.0
 hangar_zone = hangar_fp.buffer(HANGAR_OFFSET, join_style=2)
 rooms = list(named_rooms.values())
 rooms_zone = unary_union([r.buffer(HANGAR_OFFSET, join_style=2) for r in rooms])
@@ -94,10 +96,10 @@ for start in unlabeled:
 def level(i, j):
     """Return (level, source) with source 'EL', 'HANGAR' or 'TIN'."""
     if (i, j) in grid:
-        return grid[(i, j)], "EL"
+        return grid[(i, j)] - LEVEL_DEDUCTION, "EL"
     if (i, j) in hangar:
-        return HANGAR_LEVEL, "HANGAR"
-    return float(interp(X0 + i * STEP, Y0 + j * STEP)), "TIN"
+        return HANGAR_LEVEL - LEVEL_DEDUCTION, "HANGAR"
+    return float(interp(X0 + i * STEP, Y0 + j * STEP)) - LEVEL_DEDUCTION, "TIN"
 
 xs = [p[0] for p in area_poly.exterior.coords]; ys = [p[1] for p in area_poly.exterior.coords]
 i_rng = range(int((min(xs) - X0) // STEP), int((max(xs) - X0) // STEP) + 1)
@@ -162,9 +164,10 @@ for row in [["Formation level (m)", FORMATION_LEVEL],
             ["Squares with fill", sum(r["fill"] > 0 for r in rows)],
             ["Method", "Grid method: square average = mean of 4 corner levels; volume = depth x area inside hatch"],
             ["Culvert area excluded (m²)", round(area_poly.intersection(culvert).area, 2)],
-            [f"Hangar + {HANGAR_OFFSET:g} m area excluded (m²)", round(area_poly.intersection(hangar_zone).area, 2)],
-            [f"Rooms (bathroom, cafeteria, guard room) + {HANGAR_OFFSET:g} m area excluded (m²)", round(area_poly.intersection(rooms_zone).area, 2)],
+            [f"Hangar area excluded (m²)", round(area_poly.intersection(hangar_zone).area, 2)],
+            [f"Rooms (bathroom, cafeteria, guard room) area excluded (m²)", round(area_poly.intersection(rooms_zone).area, 2)],
             ["Total excluded (overlaps counted once) (m²)", round(area_poly.intersection(excluded).area, 2)],
+            ["Level deduction (m)", f"all ground levels lowered by {LEVEL_DEDUCTION}"],
             ["Hangar area", f"Unlabeled grid points under the hangar taken as {HANGAR_LEVEL}"]]:
     sm.append(row)
 for c in sm["A"]: c.font = Font(bold=True)
@@ -180,9 +183,9 @@ ax.fill(*hangar_zone.exterior.xy, fc=(1, 1, 1, 0.55), ec="#1f4e9c", hatch="\\\\"
 ax.fill(*culvert.exterior.xy, fc=(1, 1, 1, 0.0), ec="#555555", hatch="///", lw=1.2, zorder=2)
 for rz in getattr(rooms_zone, "geoms", [rooms_zone]):
     ax.fill(*rz.exterior.xy, fc=(1, 1, 1, 0.55), ec="#7030a0", hatch="xx", lw=1.5, zorder=2)
-    ax.text(*rz.centroid.coords[0], f"ROOM + {HANGAR_OFFSET:g} m\n(excluded)", ha="center", va="center", fontsize=8,
+    ax.text(*rz.centroid.coords[0], f"ROOM\n(excluded)", ha="center", va="center", fontsize=8,
             weight="bold", color="#7030a0", zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
-ax.text(*hangar_fp.centroid.coords[0], f"HANGAR + {HANGAR_OFFSET:g} m  (excluded)", ha="center", va="center", fontsize=10,
+ax.text(*hangar_fp.centroid.coords[0], f"HANGAR  (excluded)", ha="center", va="center", fontsize=10,
         weight="bold", color="#1f4e9c", rotation=-78, zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
 ax.text(*culvert_head.centroid.coords[0], "CULVERT\n(excluded)", ha="center", va="center", fontsize=9, weight="bold", color="black", zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
 for r in rows:
@@ -201,9 +204,9 @@ ax.fill(*hangar_zone.exterior.xy, fc=(1, 1, 1, 0.55), ec="#1f4e9c", hatch="\\\\"
 ax.fill(*culvert.exterior.xy, fc=(1, 1, 1, 0.0), ec="#555555", hatch="///", lw=1.2, zorder=2)
 for rz in getattr(rooms_zone, "geoms", [rooms_zone]):
     ax.fill(*rz.exterior.xy, fc=(1, 1, 1, 0.55), ec="#7030a0", hatch="xx", lw=1.5, zorder=2)
-    ax.text(*rz.centroid.coords[0], f"ROOM + {HANGAR_OFFSET:g} m\n(excluded)", ha="center", va="center", fontsize=8,
+    ax.text(*rz.centroid.coords[0], f"ROOM\n(excluded)", ha="center", va="center", fontsize=8,
             weight="bold", color="#7030a0", zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
-ax.text(*hangar_fp.centroid.coords[0], f"HANGAR + {HANGAR_OFFSET:g} m  (excluded)", ha="center", va="center", fontsize=10,
+ax.text(*hangar_fp.centroid.coords[0], f"HANGAR  (excluded)", ha="center", va="center", fontsize=10,
         weight="bold", color="#1f4e9c", rotation=-78, zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
 ax.text(*culvert_head.centroid.coords[0], "CULVERT\n(excluded)", ha="center", va="center", fontsize=9, weight="bold", color="black", zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
 for r in rows:

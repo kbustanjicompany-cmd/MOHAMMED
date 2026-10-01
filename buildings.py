@@ -4,6 +4,7 @@ coordinates as HATCHED_AREA.dxf).
   - hangar: closed green (colour 3) polyline on layer 0 around the "hangar" label
   - bathroom, cafeteria, guard room: closed blue (colour 5) polylines on layer 0 around
     their labels
+The outlines in this file already include the 1 m clearance, so they are used as drawn.
 The file also holds a copy of the plan shifted ~100 m east; only the outline that
 contains the label is used.
 """

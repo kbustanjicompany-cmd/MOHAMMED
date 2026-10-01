@@ -21,20 +21,20 @@ ax.plot(*area_poly.exterior.xy, color="magenta", lw=2.5, label="Hatched area 1",
 ax.fill(*culvert.exterior.xy, fc=(1, 0.55, 0, 0.35), ec="red", lw=2.5, hatch="//", label="Culvert zone (excluded)", zorder=21)
 ax.plot(*culvert_head.exterior.xy, color="darkred", lw=1, ls="--")
 ax.fill(*hangar_zone.exterior.xy, fc=(0.2, 0.4, 1, 0.18), ec="blue", lw=2.5, hatch="\\\\",
-        label=f"Hangar + {HANGAR_OFFSET:g} m all round (excluded)", zorder=19)
+        label="Hangar (excluded)", zorder=19)
 ax.plot(*hangar_fp.exterior.xy, color="blue", lw=1, ls="--", zorder=19)
 for i, r in enumerate(rooms, 1):
     rz = r.buffer(HANGAR_OFFSET, join_style=2)
     ax.fill(*rz.exterior.xy, fc=(0.55, 0.2, 0.7, 0.25), ec="#7030a0", lw=2.5, hatch="xx", zorder=19,
-            label=f"Bathroom, cafeteria, guard room + {HANGAR_OFFSET:g} m (excluded)" if i == 1 else None)
+            label=f"Bathroom, cafeteria, guard room (excluded)" if i == 1 else None)
     ax.plot(*r.exterior.xy, color="#7030a0", lw=1, ls="--", zorder=19)
     rx, ry = r.centroid.coords[0]
     name = list(named_rooms)[i - 1].upper()
     off = [(-6, 12), (4, 12), (14, -10)][i - 1]
-    ax.annotate(f"{name} + {HANGAR_OFFSET:g} m\n{r.area:.1f} → {rz.area:.1f} m²", (rx, ry), xytext=(rx + off[0], ry + off[1]),
+    ax.annotate(f"{name}\n{r.area:.1f} m²", (rx, ry), xytext=(rx + off[0], ry + off[1]),
                 fontsize=11, weight="bold", color="#7030a0", arrowprops=dict(arrowstyle="->", color="#7030a0"), zorder=30)
 hzx, hzy = hangar_fp.centroid.coords[0]
-ax.annotate(f"HANGAR + {HANGAR_OFFSET:g} m\n{hangar_zone.area:.1f} m²", (hzx + 5, hzy), xytext=(hzx + 22, hzy - 18),
+ax.annotate(f"HANGAR\n{hangar_zone.area:.1f} m²", (hzx + 5, hzy), xytext=(hzx + 22, hzy - 18),
             fontsize=12, weight="bold", color="blue", arrowprops=dict(arrowstyle="->", color="blue"), zorder=30)
 inside = culvert.intersection(area_poly).area
 excl = area_poly.intersection(excluded).area
@@ -46,7 +46,7 @@ ax.annotate(f"CULVERT\n{culvert_head.area:.1f} m²", (hx, hy), xytext=(hx - 30, 
             fontsize=12, weight="bold", color="red", arrowprops=dict(arrowstyle="->", color="red"))
 ax.set_aspect("equal", adjustable="box"); ax.set_xlim(353700, 353815); ax.set_ylim(355905, 355998); ax.axis("off")
 ax.legend(loc="lower left", fontsize=12)
-fig.suptitle(f"Excluded zones (culvert, hangar + {HANGAR_OFFSET:g} m, rooms + {HANGAR_OFFSET:g} m) — "
+fig.suptitle(f"Excluded zones (culvert, hangar, rooms) — "
              f"{excl:.1f} m² excluded from hatched area 1",
              fontsize=14, weight="bold")
 fig.savefig("culvert_plan.png", bbox_inches="tight"); fig.savefig("culvert_plan.pdf", bbox_inches="tight")

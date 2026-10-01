@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 
 STEP, TEXT_OFFSET = 3.0, 0.2427
 FORMATION_LEVEL = 1120.9  # excavate down to this level
+LEVEL_DEDUCTION = 0.15  # every ground level is taken 15 cm lower
 doc = ezdxf.readfile("HATCHED_AREA.dxf"); msp = doc.modelspace()
 
 labels = {}
@@ -26,11 +27,11 @@ grid = {(round((x - X0) / STEP), round((y - Y0) / STEP)): z for (x, y), z in lab
 
 pl = next(e for e in msp.query('LWPOLYLINE[layer=="0"]') if e.closed and e.dxf.color == 4)
 area_poly = Polygon([p[:2] for p in pl.get_points()])
-# excluded: hangar, bathroom, cafeteria and guard room (outlines from BUILDINGS.dxf),
-# each offset 1 m all round
+# excluded: hangar, bathroom, cafeteria and guard room (outlines from BUILDINGS.dxf,
+# used as drawn, no extra offset)
 from shapely.ops import unary_union
 from buildings import hangar as hangar_fp, rooms as named_rooms
-OFFSET = 1.0
+OFFSET = 0.0
 excluded = unary_union([r.buffer(OFFSET, join_style=2) for r in named_rooms.values()]
                        + [hangar_fp.buffer(OFFSET, join_style=2)])
 work_poly = area_poly.difference(excluded)
@@ -41,8 +42,8 @@ interp = LinearNDInterpolator(tin[:, :2], tin[:, 2])
 
 def level(i, j):
     if (i, j) in grid:
-        return grid[(i, j)], False
-    return float(interp(X0 + i * STEP, Y0 + j * STEP)), True
+        return grid[(i, j)] - LEVEL_DEDUCTION, False
+    return float(interp(X0 + i * STEP, Y0 + j * STEP)) - LEVEL_DEDUCTION, True
 
 minx, miny, maxx, maxy = area_poly.bounds
 rows = []
@@ -75,9 +76,10 @@ for r in rows:
         for c in ws[ws.max_row]: c.fill = PatternFill("solid", fgColor="F8CBAD")
 ws.append([])
 ws.append(["Squares", len(rows)])
-ws.append([f"Rooms / hangar + {OFFSET:g} m area excluded (m²)", round(area_poly.intersection(excluded).area, 2)])
+ws.append([f"Rooms / hangar area excluded (m²)", round(area_poly.intersection(excluded).area, 2)])
 ws.append(["Total area (m²)", round(sum(r["area"] for r in rows), 2)])
 ws.append([f"Formation level (m)", FORMATION_LEVEL])
+ws.append(["Level deduction (m)", f"all ground levels lowered by {LEVEL_DEDUCTION}"])
 ws.append(["Total cut (m³)", round(cut, 2)])
 ws.append(["Total fill (m³)", round(fill, 2)])
 ws.append(["Area-weighted mean level", round(sum(r["avg"] * r["area"] for r in rows) / sum(r["area"] for r in rows), 3)])
@@ -98,7 +100,7 @@ for r in rows:
 for ez in getattr(excluded, "geoms", [excluded]):
     if ez.intersection(area_poly).area > 0:
         ax.fill(*ez.exterior.xy, fc=(1, 1, 1, 0.55), ec="#7030a0", hatch="xx", lw=1.5, zorder=2)
-        ax.text(*ez.intersection(area_poly).centroid.coords[0], f"CAFETERIA + {OFFSET:g} m\n(excluded)", ha="center",
+        ax.text(*ez.intersection(area_poly).centroid.coords[0], f"CAFETERIA\n(excluded)", ha="center",
                 va="center", fontsize=8, weight="bold", color="#7030a0", zorder=5,
                 bbox=dict(fc="white", ec="none", alpha=0.8))
 ax.set_aspect("equal"); ax.axis("off")
@@ -118,7 +120,7 @@ for r in rows:
 for ez in getattr(excluded, "geoms", [excluded]):
     if ez.intersection(area_poly).area > 0:
         ax.fill(*ez.exterior.xy, fc=(1, 1, 1, 0.55), ec="#7030a0", hatch="xx", lw=1.5, zorder=2)
-        ax.text(*ez.intersection(area_poly).centroid.coords[0], f"CAFETERIA + {OFFSET:g} m\n(excluded)", ha="center",
+        ax.text(*ez.intersection(area_poly).centroid.coords[0], f"CAFETERIA\n(excluded)", ha="center",
                 va="center", fontsize=8, weight="bold", color="#7030a0", zorder=5,
                 bbox=dict(fc="white", ec="none", alpha=0.8))
 ax.set_aspect("equal"); ax.axis("off")

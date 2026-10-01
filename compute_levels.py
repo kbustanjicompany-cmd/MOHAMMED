@@ -59,13 +59,14 @@ north_break = sorted(max(breaks, key=lambda p: p[0][1]), key=lambda q: -q[0])  #
 culvert_ext = Polygon(west + south_break + east + north_break).buffer(0)
 culvert = unary_union([culvert_head, culvert_ext])
 # hangar, bathroom, cafeteria and guard room outlines (from BUILDINGS.dxf), used exactly as
-# drawn there (no extra offset) and excluded from all volumes like the culvert
+# drawn there (no extra offset) and excluded from all volumes
 from buildings import hangar as hangar_fp, rooms as named_rooms
 HANGAR_OFFSET = 0.0
 hangar_zone = hangar_fp.buffer(HANGAR_OFFSET, join_style=2)
 rooms = list(named_rooms.values())
 rooms_zone = unary_union([r.buffer(HANGAR_OFFSET, join_style=2) for r in rooms])
-excluded = unary_union([culvert, hangar_zone, rooms_zone])
+# the culvert is NOT excluded (its outline is kept for reference only)
+excluded = unary_union([hangar_zone, rooms_zone])
 work_poly = area_poly.difference(excluded)
 
 # TIN for grid points without a label: TIN nodes + the known labels
@@ -123,7 +124,7 @@ for j in j_rng:
 # ---- Excel
 wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Average levels"
 hdr = ["Square No.", "Avg level (m)", "Top-left", "Top-right", "Bottom-right", "Bottom-left",
-       "Area inside hatch excl. culvert, hangar & rooms (m²)", "Corners at hangar level", "Corners interpolated (TIN)", "X min", "Y min",
+       "Area inside hatch excl. hangar & rooms (m²)", "Corners at hangar level", "Corners interpolated (TIN)", "X min", "Y min",
        "Depth to formation (m)", "Cut volume (m³)", "Fill volume (m³)"]
 ws.append(hdr)
 for c in ws[1]:
@@ -163,7 +164,6 @@ for row in [["Formation level (m)", FORMATION_LEVEL],
             ["Squares with cut", sum(r["cut"] > 0 for r in rows)],
             ["Squares with fill", sum(r["fill"] > 0 for r in rows)],
             ["Method", "Grid method: square average = mean of 4 corner levels; volume = depth x area inside hatch"],
-            ["Culvert area excluded (m²)", round(area_poly.intersection(culvert).area, 2)],
             [f"Hangar area excluded (m²)", round(area_poly.intersection(hangar_zone).area, 2)],
             [f"Rooms (bathroom, cafeteria, guard room) area excluded (m²)", round(area_poly.intersection(rooms_zone).area, 2)],
             ["Total excluded (overlaps counted once) (m²)", round(area_poly.intersection(excluded).area, 2)],
@@ -180,14 +180,12 @@ fig, ax = plt.subplots(figsize=(22, 24), dpi=110)
 ax.fill(*area_poly.exterior.xy, color="#e8eef7", zorder=0)
 ax.plot(*area_poly.exterior.xy, color="magenta", lw=2, zorder=3)
 ax.fill(*hangar_zone.exterior.xy, fc=(1, 1, 1, 0.55), ec="#1f4e9c", hatch="\\\\", lw=1.5, zorder=2)
-ax.fill(*culvert.exterior.xy, fc=(1, 1, 1, 0.0), ec="#555555", hatch="///", lw=1.2, zorder=2)
 for rz in getattr(rooms_zone, "geoms", [rooms_zone]):
     ax.fill(*rz.exterior.xy, fc=(1, 1, 1, 0.55), ec="#7030a0", hatch="xx", lw=1.5, zorder=2)
     ax.text(*rz.centroid.coords[0], f"ROOM\n(excluded)", ha="center", va="center", fontsize=8,
             weight="bold", color="#7030a0", zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
 ax.text(*hangar_fp.centroid.coords[0], f"HANGAR  (excluded)", ha="center", va="center", fontsize=10,
         weight="bold", color="#1f4e9c", rotation=-78, zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
-ax.text(*culvert_head.centroid.coords[0], "CULVERT\n(excluded)", ha="center", va="center", fontsize=9, weight="bold", color="black", zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
 for r in rows:
     ax.add_patch(plt.Rectangle((r["x"], r["y"]), STEP, STEP, fill=bool(r["hangar"] or r["interp"]),
                                fc="#f8cbad" if r["interp"] else "#fff2cc", ec="red", lw=0.6, zorder=1))
@@ -201,14 +199,12 @@ fig.savefig("average_levels.png", bbox_inches="tight"); fig.savefig("average_lev
 fig, ax = plt.subplots(figsize=(22, 24), dpi=110)
 ax.plot(*area_poly.exterior.xy, color="magenta", lw=2, zorder=3)
 ax.fill(*hangar_zone.exterior.xy, fc=(1, 1, 1, 0.55), ec="#1f4e9c", hatch="\\\\", lw=1.5, zorder=2)
-ax.fill(*culvert.exterior.xy, fc=(1, 1, 1, 0.0), ec="#555555", hatch="///", lw=1.2, zorder=2)
 for rz in getattr(rooms_zone, "geoms", [rooms_zone]):
     ax.fill(*rz.exterior.xy, fc=(1, 1, 1, 0.55), ec="#7030a0", hatch="xx", lw=1.5, zorder=2)
     ax.text(*rz.centroid.coords[0], f"ROOM\n(excluded)", ha="center", va="center", fontsize=8,
             weight="bold", color="#7030a0", zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
 ax.text(*hangar_fp.centroid.coords[0], f"HANGAR  (excluded)", ha="center", va="center", fontsize=10,
         weight="bold", color="#1f4e9c", rotation=-78, zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
-ax.text(*culvert_head.centroid.coords[0], "CULVERT\n(excluded)", ha="center", va="center", fontsize=9, weight="bold", color="black", zorder=5, bbox=dict(fc="white", ec="none", alpha=0.8))
 for r in rows:
     d = r["avg"] - FORMATION_LEVEL
     ax.add_patch(plt.Rectangle((r["x"], r["y"]), STEP, STEP, fc="#f4cccc" if d > 0 else "#cfe2f3",

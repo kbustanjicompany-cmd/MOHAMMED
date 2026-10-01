@@ -14,7 +14,10 @@ import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 STEP, TEXT_OFFSET = 3.0, 0.2427
-FORMATION_LEVEL = 1120.9  # excavate down to this level
+import sys
+# excavate down to this level; pass another one on the command line, e.g. python3 number_area2.py 1114.85
+FORMATION_LEVEL = float(sys.argv[1]) if len(sys.argv) > 1 else 1120.9
+SUFFIX = f"{FORMATION_LEVEL:g}"
 LEVEL_DEDUCTION = 0.15  # every ground level is taken 15 cm lower
 doc = ezdxf.readfile("HATCHED_AREA.dxf"); msp = doc.modelspace()
 
@@ -86,7 +89,7 @@ ws.append(["Area-weighted mean level", round(sum(r["avg"] * r["area"] for r in r
 for col, w in zip("ABCDEFGHIJKLM", [11, 13, 11, 11, 13, 12, 14, 13, 14, 14, 13, 13, 13]):
     ws.column_dimensions[col].width = w
 ws.freeze_panes = "A2"
-wb.save("area2_levels.xlsx")
+wb.save(f"area2_levels_{SUFFIX}.xlsx")
 
 fig, ax = plt.subplots(figsize=(9, 24), dpi=110)
 ax.fill(*area_poly.exterior.xy, color="#e8eef7", zorder=0)
@@ -126,7 +129,7 @@ for ez in getattr(excluded, "geoms", [excluded]):
 ax.set_aspect("equal"); ax.axis("off")
 ax.set_title(f"Area 2 — excavation to {FORMATION_LEVEL}\nsquare no. / depth / volume\n"
              f"Total cut = {cut:,.1f} m³   Total fill = {fill:,.1f} m³", fontsize=13)
-fig.savefig("area2_excavation.png", bbox_inches="tight"); fig.savefig("area2_excavation.pdf", bbox_inches="tight")
+fig.savefig(f"area2_excavation_{SUFFIX}.png", bbox_inches="tight"); fig.savefig(f"area2_excavation_{SUFFIX}.pdf", bbox_inches="tight")
 plt.close(fig)
 print(f"cut={cut:.2f} fill={fill:.2f} max depth={max(r['depth'] for r in rows):.2f} min depth={min(r['depth'] for r in rows):.2f}")
 a = np.array([r["avg"] for r in rows])

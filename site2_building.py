@@ -1,7 +1,10 @@
-"""Building inside the SITE2.dxf lot with setbacks: STREET_SETBACK = 3 m from the street
+"""Largest RECTANGULAR building inside the SITE2.dxf lot with setbacks: STREET_SETBACK = 3 m from the street
 (west side, 13.52 m) and SIDE_SETBACK = 2.5 m from the other three sides.
 
   - setback line = intersection of the lot with every side moved inwards by its setback
+  - the largest rectangle (max area) inside the setback line: for every orientation (0.5 deg)
+    and width (0.1 m) a linear programme gives the largest depth, then refined to
+    0.05 deg / 0.01 m; sides rounded down to the centimetre
   - the largest square inside the setback line is found by linear programming for every
     orientation (0.1 deg steps): maximise side s over centre (cx, cy) with all four corners
     inside every (convex) setback edge
@@ -106,7 +109,7 @@ lot_c = list(lot.exterior.coords)
 clear = []
 for p, q in zip(lot_c, lot_c[1:]):
     from shapely.geometry import LineString
-    clear.append((LineString([p, q]).length, LineString([p, q]).distance(square)))
+    clear.append((LineString([p, q]).length, LineString([p, q]).distance(rect_poly)))
 
 doc = ezdxf.new("R2018", setup=True); doc.units = ezdxf.units.M
 msp = doc.modelspace()
@@ -119,17 +122,22 @@ msp.add_lwpolyline([tuple(p) for p in V], close=True, dxfattribs={"layer": "SETB
 msp.add_lwpolyline([tuple(p) for p in V], close=True, dxfattribs={"layer": "BUILDING-SETBACK-SHAPE"})
 msp.add_lwpolyline([tuple(p) for p in sq], close=True, dxfattribs={"layer": "BUILDING-SQUARE"})
 msp.add_lwpolyline([tuple(p) for p in rect], close=True, dxfattribs={"layer": "BUILDING-RECTANGLE"})
-msp.add_mtext(f"OPTION - RECTANGLE {rw:.2f} x {rh:.2f} m = {rw * rh:.2f} m²", dxfattribs={"layer": "DIM-TEXT", "char_height": 0.35}
-              ).set_location(tuple(np.array([rx, ry]) - rv * (rh / 2 + .6)), attachment_point=5)
-h = msp.add_hatch(color=1, dxfattribs={"layer": "BUILDING-SQUARE-HATCH"})
-h.set_pattern_fill("ANSI31", scale=0.1); h.paths.add_polyline_path([tuple(p) for p in sq], is_closed=True)
+hr = msp.add_hatch(color=5, dxfattribs={"layer": "BUILDING-RECTANGLE"})
+hr.set_pattern_fill("ANSI31", scale=0.1); hr.paths.add_polyline_path([tuple(p) for p in rect], is_closed=True)
+rang_ = np.degrees(rth); rrot_ = rang_ if -90 < rang_ <= 90 else rang_ - 180
+msp.add_mtext(f"BUILDING {rw:.2f} x {rh:.2f} m\\PAREA = {rw * rh:.2f} m²\\P(street >= 3 m, sides >= 2.5 m)",
+              dxfattribs={"layer": "DIM-TEXT", "char_height": 0.45, "rotation": rrot_}).set_location((rx, ry), attachment_point=5)
+for p, q in zip(rect, rect[1:] + rect[:1]):
+    m2 = (p + q) / 2; ea = np.degrees(np.arctan2(q[1] - p[1], q[0] - p[0])); ea = ea if -90 < ea <= 90 else ea - 180
+    msp.add_text(f"{np.linalg.norm(q - p):.2f}", height=0.3, rotation=ea, dxfattribs={"layer": "DIM-TEXT"}
+                 ).set_placement(tuple(m2), align=ezdxf.enums.TextEntityAlignment.MIDDLE_CENTER)
+
 rot = ang if -90 < ang <= 90 else ang - 180
-msp.add_mtext(f"SQUARE BUILDING {s:.2f} x {s:.2f} m\\PAREA = {s * s:.2f} m²\\P(street {STREET_SETBACK:g} m, other sides {SIDE_SETBACK:g} m)",
-              dxfattribs={"layer": "DIM-TEXT", "char_height": 0.45, "rotation": rot}).set_location((cx, cy), attachment_point=5)
+
 for (p, q) in edges:
     mid = (p + q) / 2
     msp.add_text(f"{np.linalg.norm(q - p):.2f}", height=0.3, dxfattribs={"layer": "DIM-TEXT"}).set_placement(tuple(mid))
-msp.add_mtext(f"LOT {lot.area:.2f} m²  |  SQUARE BUILDING {s:.2f} x {s:.2f} = {s * s:.2f} m²  |  option rectangle {rw:.2f} x {rh:.2f} = {rw * rh:.2f} m²  |  setback outline {inner.area:.2f} m²",
+msp.add_mtext(f"LOT {lot.area:.2f} m²  |  BUILDING (largest rectangle) {rw:.2f} x {rh:.2f} = {rw * rh:.2f} m²  |  square option {s:.2f} x {s:.2f} = {s * s:.2f} m²",
               dxfattribs={"layer": "DIM-TEXT", "char_height": 0.5}).set_location((lot.bounds[0], lot.bounds[3] + 2), attachment_point=7)
 doc.saveas("site2_building.dxf")
 
@@ -137,23 +145,30 @@ fig, ax = plt.subplots(figsize=(14, 11))
 ax.plot(*lot.exterior.xy, color="black", lw=2, label=f"lot {lot.area:.2f} m²")
 ax.plot(*inner.exterior.xy, color="green", lw=1.2, ls="--",
         label=f"setback line: street 3 m, sides 2.5 m ({inner.area:.2f} m²)")
-ax.plot(*rect_poly.exterior.xy, color="#1f4e9c", lw=1.5, ls="-.",
-        label=f"option: largest rectangle {rw:.2f} x {rh:.2f} = {rw * rh:.2f} m²")
+ax.fill(*rect_poly.exterior.xy, fc="#cfe2f3", ec="#1f4e9c", lw=2.5, hatch="//",
+        label=f"BUILDING - largest rectangle {rw:.2f} x {rh:.2f} = {rw * rh:.2f} m²")
+rang = np.degrees(rth); rrot = rang if -90 < rang <= 90 else rang - 180
+ax.text(rx, ry, f"{rw:.2f} x {rh:.2f} m\n{rw * rh:.2f} m²", ha="center", va="center", fontsize=13,
+        weight="bold", rotation=rrot, color="#0b3d91", bbox=dict(fc="white", ec="none", alpha=.85))
+for p, q in zip(rect, rect[1:] + rect[:1]):
+    m2 = (p + q) / 2
+    ax.text(*m2, f"{np.linalg.norm(q - p):.2f}", fontsize=10, color="#0b3d91", ha="center", va="center",
+            bbox=dict(fc="#ffffcc", ec="none", alpha=.9))
 ic = inner.centroid
 
-ax.fill(*square.exterior.xy, fc="#f4cccc", ec="red", lw=2.2, hatch="//", label=f"SQUARE BUILDING {s:.2f} x {s:.2f} = {s * s:.2f} m²")
+ax.fill(*square.exterior.xy, fc="none", ec="red", lw=1, ls=":", label=f"(previous option: square {s:.2f} x {s:.2f} = {s * s:.2f} m²)")
 for (L_, d_), (p, q) in zip(clear, zip(lot_c, lot_c[1:])):
     m_ = ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)
     tag = "STREET\n" if abs(L_ - 13.518) < 0.05 else ""
     ax.text(*m_, f"{tag}{L_:.2f} m\nclear {d_:.2f}", fontsize=9, ha="center", color="#333333",
             bbox=dict(fc="white", ec="none", alpha=.8))
-ax.text(cx, cy, f"{s:.2f} x {s:.2f}\n{s * s:.2f} m²", ha="center", va="center", fontsize=12, weight="bold", rotation=rot)
+
 ax.set_aspect("equal"); ax.axis("off"); ax.legend(loc="lower right", fontsize=11)
 ax.text(*lot.centroid.coords[0], "", fontsize=1)
-ax.set_title(f"Square building {s:.2f} x {s:.2f} m — at least 3 m from the street (west), 2.5 m from the other sides",
-             fontsize=13, weight="bold")
+ax.set_title(f"Largest rectangular building {rw:.2f} x {rh:.2f} m = {rw * rh:.2f} m²\n"
+             "at least 3 m from the street (west) and 2.5 m from the other sides", fontsize=13, weight="bold")
 fig.savefig("site2_building.pdf", bbox_inches="tight")
 print(f"lot={lot.area:.2f} setback={inner.area:.2f} square side={s:.2f} area={s*s:.2f} angle={ang:.1f} rect={rw:.2f}x{rh:.2f}={rw*rh:.2f} rect_angle={np.degrees(rth):.1f}")
 rcl = [(round(LineString([p, q]).length, 2), round(LineString([p, q]).distance(rect_poly), 2)) for p, q in zip(lot_c, lot_c[1:])]
 print("rectangle clearances", rcl)
-print("square clearances", [(round(L_, 2), round(d_, 2)) for L_, d_ in clear])
+print("rectangle clearances (plot)", [(round(L_, 2), round(d_, 2)) for L_, d_ in clear])

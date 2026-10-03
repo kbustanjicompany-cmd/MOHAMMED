@@ -59,6 +59,41 @@ def best_square(theta):
     return (r.x[2], r.x[0] + ox, r.x[1] + oy, u, v) if r.success else (0, 0, 0, u, v)
 
 
+def best_rect(theta, w):
+    """largest h for a w x h rectangle (w along theta) inside the setback outline."""
+    u = np.array([np.cos(theta), np.sin(theta)]); v = np.array([-u[1], u[0]])
+    A, b = [], []
+    for p, q in edges:
+        e = q - p; n = np.array([-e[1], e[0]]); n /= np.linalg.norm(n)
+        for a_, b_ in [(+.5, +.5), (+.5, -.5), (-.5, +.5), (-.5, -.5)]:
+            # n.(c + a_*w*u + b_*h*v - p) >= 0
+            A.append([-n[0], -n[1], -b_ * (n @ v)]); b.append(-(n @ (p - [ox, oy])) + a_ * w * (n @ u))
+    r = linprog([0, 0, -1], A_ub=A, b_ub=b, bounds=[(None, None), (None, None), (0, None)])
+    return (r.x[2], r.x[0] + ox, r.x[1] + oy) if r.success else (0, 0, 0)
+
+
+best = (0,)
+for a in np.arange(0, 180, 0.5):
+    th = np.radians(a)
+    for w in np.arange(4, 20, 0.1):
+        h, rx, ry = best_rect(th, w)
+        if w * h > best[0]:
+            best = (w * h, w, h, rx, ry, th)
+# refine around the best orientation / width
+a0, w0 = np.degrees(best[5]), best[1]
+for a in np.arange(a0 - 0.6, a0 + 0.6, 0.05):
+    th = np.radians(a)
+    for w in np.arange(w0 - 0.2, w0 + 0.2, 0.01):
+        h, rx, ry = best_rect(th, w)
+        if w * h > best[0]:
+            best = (w * h, w, h, rx, ry, th)
+_, rw, rh, rx, ry, rth = best
+rw, rh = np.floor(rw * 100) / 100, np.floor(rh * 100) / 100
+ru = np.array([np.cos(rth), np.sin(rth)]); rv = np.array([-ru[1], ru[0]])
+rect = [np.array([rx, ry]) + a_ * rw * ru + b_ * rh * rv for a_, b_ in [(-.5, -.5), (.5, -.5), (.5, .5), (-.5, .5)]]
+rect_poly = Polygon(rect)
+assert inner.buffer(1e-6).contains(rect_poly)
+
 cands = [best_square(np.radians(a)) for a in np.arange(0, 90, 0.1)]
 s, cx, cy, u, v = max(cands, key=lambda t: t[0])
 s = np.floor(s * 100) / 100                     # round the side down to the centimetre
@@ -71,18 +106,21 @@ lot_c = list(lot.exterior.coords)
 clear = []
 for p, q in zip(lot_c, lot_c[1:]):
     from shapely.geometry import LineString
-    clear.append((LineString([p, q]).length, LineString([p, q]).distance(inner)))
+    clear.append((LineString([p, q]).length, LineString([p, q]).distance(square)))
 
 doc = ezdxf.new("R2018", setup=True); doc.units = ezdxf.units.M
 msp = doc.modelspace()
 for name, col, lt in (("LOT", 7, "CONTINUOUS"), ("SETBACK-LINE", 3, "DASHED"), ("BUILDING-SQUARE", 1, "CONTINUOUS"),
-                      ("BUILDING-SQUARE-HATCH", 1, "CONTINUOUS"), ("BUILDING-SETBACK-SHAPE", 5, "CONTINUOUS"),
+                      ("BUILDING-SQUARE-HATCH", 1, "CONTINUOUS"), ("BUILDING-SETBACK-SHAPE", 5, "CONTINUOUS"), ("BUILDING-RECTANGLE", 6, "CONTINUOUS"),
                       ("DIM-TEXT", 2, "CONTINUOUS")):
     doc.layers.add(name, color=col, linetype=lt)
 msp.add_lwpolyline(list(lot.exterior.coords)[:-1], close=True, dxfattribs={"layer": "LOT"})
 msp.add_lwpolyline([tuple(p) for p in V], close=True, dxfattribs={"layer": "SETBACK-LINE"})
 msp.add_lwpolyline([tuple(p) for p in V], close=True, dxfattribs={"layer": "BUILDING-SETBACK-SHAPE"})
 msp.add_lwpolyline([tuple(p) for p in sq], close=True, dxfattribs={"layer": "BUILDING-SQUARE"})
+msp.add_lwpolyline([tuple(p) for p in rect], close=True, dxfattribs={"layer": "BUILDING-RECTANGLE"})
+msp.add_mtext(f"OPTION - RECTANGLE {rw:.2f} x {rh:.2f} m = {rw * rh:.2f} m²", dxfattribs={"layer": "DIM-TEXT", "char_height": 0.35}
+              ).set_location(tuple(np.array([rx, ry]) - rv * (rh / 2 + .6)), attachment_point=5)
 h = msp.add_hatch(color=1, dxfattribs={"layer": "BUILDING-SQUARE-HATCH"})
 h.set_pattern_fill("ANSI31", scale=0.1); h.paths.add_polyline_path([tuple(p) for p in sq], is_closed=True)
 rot = ang if -90 < ang <= 90 else ang - 180
@@ -91,20 +129,19 @@ msp.add_mtext(f"SQUARE BUILDING {s:.2f} x {s:.2f} m\\PAREA = {s * s:.2f} m²\\P(
 for (p, q) in edges:
     mid = (p + q) / 2
     msp.add_text(f"{np.linalg.norm(q - p):.2f}", height=0.3, dxfattribs={"layer": "DIM-TEXT"}).set_placement(tuple(mid))
-msp.add_mtext(f"LOT {lot.area:.2f} m²  |  SETBACK OUTLINE (street 3 m, sides 2.5 m) {inner.area:.2f} m²  |  SQUARE {s:.2f} x {s:.2f} = {s * s:.2f} m²",
+msp.add_mtext(f"LOT {lot.area:.2f} m²  |  SQUARE BUILDING {s:.2f} x {s:.2f} = {s * s:.2f} m²  |  option rectangle {rw:.2f} x {rh:.2f} = {rw * rh:.2f} m²  |  setback outline {inner.area:.2f} m²",
               dxfattribs={"layer": "DIM-TEXT", "char_height": 0.5}).set_location((lot.bounds[0], lot.bounds[3] + 2), attachment_point=7)
 doc.saveas("site2_building.dxf")
 
 fig, ax = plt.subplots(figsize=(14, 11))
 ax.plot(*lot.exterior.xy, color="black", lw=2, label=f"lot {lot.area:.2f} m²")
-ax.fill(*inner.exterior.xy, fc="#cfe2f3", ec="#1f4e9c", lw=2,
-        label=f"building on the setback line (street 3 m, sides 2.5 m): {inner.area:.2f} m²")
+ax.plot(*inner.exterior.xy, color="green", lw=1.2, ls="--",
+        label=f"setback line: street 3 m, sides 2.5 m ({inner.area:.2f} m²)")
+ax.plot(*rect_poly.exterior.xy, color="#1f4e9c", lw=1.5, ls="-.",
+        label=f"option: largest rectangle {rw:.2f} x {rh:.2f} = {rw * rh:.2f} m²")
 ic = inner.centroid
-ax.text(ic.x - 4, ic.y - 1.5, f"{inner.area:.2f} m²", fontsize=12, weight="bold", color="#1f4e9c")
-for p, q in zip(list(inner.exterior.coords), list(inner.exterior.coords)[1:]):
-    ax.text((p[0] + q[0]) / 2, (p[1] + q[1]) / 2, f"{np.hypot(q[0] - p[0], q[1] - p[1]):.2f}", fontsize=9,
-            color="#1f4e9c", ha="center", bbox=dict(fc="white", ec="none", alpha=.7))
-ax.fill(*square.exterior.xy, fc="none", ec="red", lw=1.5, ls="--", hatch="//", label=f"option: largest square {s:.2f} x {s:.2f} = {s * s:.2f} m²")
+
+ax.fill(*square.exterior.xy, fc="#f4cccc", ec="red", lw=2.2, hatch="//", label=f"SQUARE BUILDING {s:.2f} x {s:.2f} = {s * s:.2f} m²")
 for (L_, d_), (p, q) in zip(clear, zip(lot_c, lot_c[1:])):
     m_ = ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)
     tag = "STREET\n" if abs(L_ - 13.518) < 0.05 else ""
@@ -113,7 +150,10 @@ for (L_, d_), (p, q) in zip(clear, zip(lot_c, lot_c[1:])):
 ax.text(cx, cy, f"{s:.2f} x {s:.2f}\n{s * s:.2f} m²", ha="center", va="center", fontsize=12, weight="bold", rotation=rot)
 ax.set_aspect("equal"); ax.axis("off"); ax.legend(loc="lower right", fontsize=11)
 ax.text(*lot.centroid.coords[0], "", fontsize=1)
-ax.set_title("Building with setbacks: street (west) 3 m, other sides 2.5 m", fontsize=14, weight="bold")
+ax.set_title(f"Square building {s:.2f} x {s:.2f} m — at least 3 m from the street (west), 2.5 m from the other sides",
+             fontsize=13, weight="bold")
 fig.savefig("site2_building.pdf", bbox_inches="tight")
-print(f"lot={lot.area:.2f} setback={inner.area:.2f} square side={s:.2f} area={s*s:.2f} angle={ang:.1f}")
-print("setback-outline clearances", [(round(L_, 2), round(d_, 2)) for L_, d_ in clear])
+print(f"lot={lot.area:.2f} setback={inner.area:.2f} square side={s:.2f} area={s*s:.2f} angle={ang:.1f} rect={rw:.2f}x{rh:.2f}={rw*rh:.2f} rect_angle={np.degrees(rth):.1f}")
+rcl = [(round(LineString([p, q]).length, 2), round(LineString([p, q]).distance(rect_poly), 2)) for p, q in zip(lot_c, lot_c[1:])]
+print("rectangle clearances", rcl)
+print("square clearances", [(round(L_, 2), round(d_, 2)) for L_, d_ in clear])

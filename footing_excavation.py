@@ -7,6 +7,8 @@ Fixed levels (from the bulk excavation level down to the founding level):
   - Footprint: blinding under footings & rafts from footings_concrete.py (FOUNDATIONS.dxf,
     local coordinates), placed on site with the transform matched on the S-BLINDING LINE
     polylines that HATCHED_AREA.dxf also carries (rotation -6.81 deg, residual < 1 mm).
+  - Sheet "By footing": every isolated footing F1-F10 with its blinding (A+0.2) x (B+0.2)
+    and the area it stands in; the rest of the blinding is rafts / water tank / wall footings.
   - Each blinding cell is assigned to area 1 or area 2 (the nearer one when a footing edge
     sticks slightly out of the hatched outline).
 Outputs: footing_excavation.xlsx, footing_excavation.pdf/png
@@ -82,8 +84,51 @@ ws.append(["TOTAL", "", round(tot_a, 2), "", "", "", round(tot_v, 2)])
 for cc in ws[ws.max_row]: cc.font = Font(bold=True)
 ws.append([])
 ws.append(["Footprint", "blinding under footings & rafts, ground beams excluded (FOUNDATIONS.dxf)"])
+
+# ---- per footing: blinding (A+0.2) x (B+0.2), area from the footing's position on site
+EXTRA_FOOTINGS = [("F2", 11.2, 6.05), ("F2", 19.5, 6.05), ("F3", 19.4, 9.4)]   # sit inside raft/tank pieces
+foots = [(r[1].split()[1], r[4], r[5]) for r in rows if r[1].startswith("Footing") and "(x2)" not in r[1]
+         and r[1] != "Footing F3"] + EXTRA_FOOTINGS
+foots.sort(key=lambda f: (-round(f[2] / 3), f[1]))
+ws2 = wb.create_sheet("By footing")
+ws2.append(["No.", "Footing", "A x B (m)", "Blinding (A+0.2)x(B+0.2) (m²)", "Area", "From", "To", "Depth (m)",
+            "Volume (m³)", "Site X", "Site Y"])
+for cc in ws2[1]:
+    cc.font = Font(bold=True, color="FFFFFF"); cc.fill = PatternFill("solid", fgColor="305496")
+    cc.alignment = openpyxl.styles.Alignment(wrap_text=True)
+f_tot = {1: [0, 0], 2: [0, 0]}
+foot_marks = []
+for i, (f, x, y) in enumerate(foots, 1):
+    A_, B_, _ = SCHEDULE[f]
+    ab = (A_ + 2 * PROJECTION) * (B_ + 2 * PROJECTION)
+    px_, py_ = Rm @ np.array([x, y]) + T
+    p = points(px_, py_)
+    z = 1 if distance(area1, p) <= distance(area2, p) else 2
+    dep = TOP[z] - BOTTOM[z]
+    ws2.append([i, f, f"{A_:.2f} x {B_:.2f}", round(ab, 2), f"Area {z}", TOP[z], BOTTOM[z], round(dep, 2),
+                round(ab * dep, 2), round(px_, 2), round(py_, 2)])
+    f_tot[z][0] += ab; f_tot[z][1] += ab * dep
+    foot_marks.append((i, f, px_, py_, z))
+ws2.append([])
+for z in (1, 2):
+    ws2.append(["", f"Footings in area {z}", "", round(f_tot[z][0], 2), "", "", "", "", round(f_tot[z][1], 2)])
+ws2.append(["", "ALL FOOTINGS (16)", "", round(f_tot[1][0] + f_tot[2][0], 2), "", "", "", "",
+            round(f_tot[1][1] + f_tot[2][1], 2)])
+for cc in ws2[ws2.max_row]: cc.font = Font(bold=True)
+ws2.append([])
+ws2.append(["", "Rafts, water tank and wall footings (rest of the blinding)"]); ws2[ws2.max_row][1].font = Font(bold=True)
+for z, item, a, t, b in lines:
+    a_r = a - (f_tot[z][0] if item == "Footings & rafts" else 0)
+    ws2.append(["", f"Area {z}: {item.replace('Footings & rafts', 'rafts / tank / walls')}", "", round(a_r, 2), f"Area {z}",
+                t, b, round(t - b, 2), round(a_r * (t - b), 2)])
+ws2.append([])
+ws2.append(["", "TOTAL (footings + rafts)", "", round(tot_a, 2), "", "", "", "", round(tot_v, 2)])
+for cc in ws2[ws2.max_row]: cc.font = Font(bold=True)
+for col, wd in zip("ABCDEFGHIJK", [6, 34, 13, 16, 9, 9, 9, 10, 12, 13, 13]):
+    ws2.column_dimensions[col].width = wd
 for col, wd in zip("ABCDEFG", [10, 40, 18, 12, 10, 10, 14]):
     ws.column_dimensions[col].width = wd
+
 wb.save("footing_excavation.xlsx")
 
 fig, ax = plt.subplots(figsize=(16, 15), dpi=110)
@@ -93,8 +138,9 @@ deep_any = sum(deep_frac.values())[r, c] > 0.5
 for m, col, lbl in [((zone == 1) & ~deep_any, "#f6b26b", None), ((zone == 2), "#93c47d", None),
                     (deep_any, "#a64d79", f"F.B.L {DEEP_BOTTOM} rafts: {TOP[1]} → {DEEP_BOTTOM}")]:
     ax.scatter(sx[m], sy[m], s=0.6, marker="s", color=col, label=lbl)
-for z, item, a, t, b in lines:
-    pass
+for i, f, px_, py_, z in foot_marks:
+    ax.text(px_, py_, f"{i}\n{f}", ha="center", va="center", fontsize=7, weight="bold",
+            bbox=dict(fc="white", ec="black", lw=.5, alpha=.85, pad=1))
 ax.set_aspect("equal"); ax.axis("off"); ax.legend(loc="lower left", fontsize=11, markerscale=12)
 ax.set_title(f"Excavation under footings & rafts (blinding area)\n"
              + "   ".join(f"Area {z}: {v:,.1f} m³" for z, (a, v) in sub.items()) + f"   —   Total = {tot_v:,.1f} m³",
@@ -102,3 +148,5 @@ ax.set_title(f"Excavation under footings & rafts (blinding area)\n"
 fig.savefig("footing_excavation.png", bbox_inches="tight"); fig.savefig("footing_excavation.pdf", bbox_inches="tight")
 for l in lines: print(l[0], l[1], round(l[2], 2), l[3], l[4], round(l[2] * (l[3] - l[4]), 2))
 print("total", round(tot_a, 2), round(tot_v, 2), {z: [round(x, 2) for x in s] for z, s in sub.items()})
+print("footings", {z: [round(v, 2) for v in t] for z, t in f_tot.items()})
+for m_ in foot_marks: print(m_[0], m_[1], "area", m_[4])

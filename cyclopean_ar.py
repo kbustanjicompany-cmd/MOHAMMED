@@ -3,7 +3,7 @@ Areas come from cyclopean.py (DXF geometry); all volumes are live Excel formulas
 import io, contextlib
 with contextlib.redirect_stdout(io.StringIO()):
     exec(open("cyclopean.py").read())
-ROWS = detail                       # per-footing rows: [offset from hatch, offset from concrete]
+ROWS = detail                       # per-footing rows: [offset from concrete (adopted), offset from hatch]
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.comments import Comment
@@ -132,17 +132,17 @@ def detail(name, cyc_rows, note):
     ws.print_title_rows = f"{hr}:{sub}"
     return name, rt
 
-S1 = detail("الإزاحة 1 م من حد النظافة", ROWS[0],
-            "الإزاحة 1.0 م مقيسة من خط التهشير (حد النظافة) – بدون إزاحة على الوجه الخارجي للجدار الاستنادي")
-S2 = detail("الإزاحة 1 م من وجه الخرسانة", ROWS[1],
-            "الإزاحة 1.0 م مقيسة من وجه الخرسانة (0.9 م من حد النظافة) – بدون إزاحة على الوجه الخارجي للجدار الاستنادي")
+S1 = detail("الإزاحة 1 م من وجه الخرسانة", ROWS[0],
+            "المعتمد: الإزاحة 1.0 م مقيسة من وجه الخرسانة (0.9 م من حد النظافة) – بدون إزاحة على الوجه الخارجي للجدار الاستنادي")
+S2 = detail("بديل - الإزاحة من حد النظافة", ROWS[1],
+            "للمقارنة فقط: الإزاحة 1.0 م مقيسة من خط التهشير (حد النظافة) – بدون إزاحة على الوجه الخارجي للجدار الاستنادي")
 
 # ---------------- summary table
 r = 16
 S.merge_cells(f"B{r}:E{r}"); c = S[f"B{r}"]; c.value = "ثانياً: ملخص الكميات"
 c.font = Font(name=F, size=12, bold=True, color=NAVY); c.alignment = right
 r += 1
-head(S, r, ["البند", "الإزاحة من\nحد النظافة", "الإزاحة من\nوجه الخرسانة", "الوحدة"], 2)
+head(S, r, ["البند", "المعتمد: الإزاحة\nمن وجه الخرسانة", "للمقارنة: الإزاحة\nمن حد النظافة", "الوحدة"], 2)
 items = [("مساحة النظافة (القواعد المهشرة)", "D", "م²"), ("مساحة السيكلوبين", "E", "م²"),
          ("مساحة شريط الإزاحة", "F", "م²"), ("الحفر قبل – على مساحة النظافة", "G", "م³"),
          ("الحفر بعد – على مساحة السيكلوبين", "H", "م³"), ("الحفر الزائد", "I", "م³"),
@@ -155,7 +155,7 @@ for i, (t, col, u) in enumerate(items):
         cell(S, rr, 3 + j, f"='{nm}'!{col}{rt}", NUM, fill=f, bold=col in key, color="008000")
     cell(S, rr, 5, u, fill=f)
 n = r + len(items) + 2
-for i, t in enumerate(["• المعتمد في الحسابات السابقة: الإزاحة من حد النظافة (العمود الأول).",
+for i, t in enumerate(["• المعتمد: إزاحة 1 م من وجه الخرسانة (العمود الأول)؛ العمود الثاني للمقارنة فقط.",
                        "• الخلايا الصفراء في المعطيات قابلة للتعديل وتُحدّث كل الجداول تلقائياً."]):
     S.merge_cells(f"B{n + i}:E{n + i}"); c = S[f"B{n + i}"]; c.value = t
     c.font = Font(name=F, size=10, color="404040"); c.alignment = right

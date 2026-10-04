@@ -5,13 +5,13 @@
   with the pads attached to it, plus three separate pads.
 - Cyclopean outline = footings + OFFSET (1.0 m) all round, EXCEPT on the outer face of the
   retaining-wall footing (soil / boundary side): there it stops flush with the footing edge.
-- Cyclopean thickness DEPTH = 0.5 m, under the footing founding level (area 2: 1118.0 -> 1117.5).
+- Cyclopean thickness DEPTH = 0.5 m, from the excavation level 1118.0 up to 1118.5 (the footings
+  now sit on the cyclopean at 1118.5).
 - Extra excavation because of this item (footing pits were priced over the blinding outline
   from 1120.9 down to 1118.0, see footing_excavation.py):
-    1) the cyclopean layer itself: cyclopean area x 0.5
-    2) widening the pit by the offset band from 1120.9 down to 1118.0:
-       (cyclopean area - footing area) x 2.9
-- Extra backfill: the widened band above the cyclopean, 1118.0 -> 1120.9 = item 2.
+    widening the pit by the offset band from 1120.9 down to 1118.0:
+    (cyclopean area - footing area) x 2.9   (no excavation below 1118.0)
+- Extra backfill: the widened band above the cyclopean, 1118.5 -> 1120.9: band x 2.4.
 Outputs: cyclopean.xlsx, cyclopean.pdf, cyclopean.dxf
 """
 import numpy as np
@@ -26,7 +26,8 @@ from openpyxl.styles import Font, PatternFill
 
 SRC = "syclopien.dxf"
 OFFSET, DEPTH = 1.0, 0.5
-TOP, FBL = 1120.9, 1118.0          # area 2 bulk excavation level and footing founding level
+TOP, FBL = 1120.9, 1118.0          # area 2 bulk excavation level and excavation (cyclopean) bottom
+CTOP = FBL + DEPTH                 # cyclopean top = new footing founding level 1118.5
 
 doc = ezdxf.readfile(SRC); msp = doc.modelspace()
 pieces = [Polygon([(v.x, v.y) for v in p.flattening(0.02)]).buffer(0)
@@ -55,8 +56,8 @@ cyc = unary_union([cyc, foot])
 A_f, A_c = foot.area, cyc.area
 band = A_c - A_f
 V_cyc = A_c * DEPTH
-V_ex1, V_ex2 = V_cyc, band * (TOP - FBL)
-V_exc, V_fill = V_ex1 + V_ex2, band * (TOP - FBL)
+V_ex1, V_ex2 = 0.0, band * (TOP - FBL)
+V_exc, V_fill = V_ex1 + V_ex2, band * (TOP - CTOP)
 
 # check: offset measured from the concrete face (hatch is the blinding, 0.10 m bigger)
 cyc_c = unary_union([unary_union([p.buffer(OFFSET - 0.1, join_style=2) for p in pieces]).intersection(inside), foot])
@@ -66,15 +67,14 @@ hdr = lambda: [setattr(c, "font", Font(bold=True, color="FFFFFF")) or setattr(c,
 ws.append(["Item", "Area (m²)", "From level", "To level", "Depth (m)", "Volume (m³)"]); hdr()
 ws.append(["Hatched footings (blinding outline)", round(A_f, 2)])
 ws.append([f"Cyclopean concrete (footings + {OFFSET} m offset, flush on the retaining-wall outer face)",
-           round(A_c, 2), FBL, FBL - DEPTH, DEPTH, round(V_cyc, 2)])
+           round(A_c, 2), FBL, CTOP, DEPTH, round(V_cyc, 2)])
 ws.append([])
 ws.append(["EXTRA EXCAVATION", "", "", "", "", ""]); ws[ws.max_row][0].font = Font(bold=True)
-ws.append(["1) Cyclopean layer under the footings", round(A_c, 2), FBL, FBL - DEPTH, DEPTH, round(V_ex1, 2)])
-ws.append([f"2) Widening the pits by the offset band", round(band, 2), TOP, FBL, TOP - FBL, round(V_ex2, 2)])
+ws.append([f"Widening the pits by the offset band", round(band, 2), TOP, FBL, TOP - FBL, round(V_ex2, 2)])
 ws.append(["Total extra excavation", "", "", "", "", round(V_exc, 2)]); ws[ws.max_row][0].font = Font(bold=True)
 ws.append([])
 ws.append(["EXTRA BACKFILL", "", "", "", "", ""]); ws[ws.max_row][0].font = Font(bold=True)
-ws.append(["Offset band above the cyclopean", round(band, 2), FBL, TOP, TOP - FBL, round(V_fill, 2)])
+ws.append(["Offset band above the cyclopean", round(band, 2), CTOP, TOP, TOP - CTOP, round(V_fill, 2)])
 ws.append([])
 ws.append(["Check - offset 1 m from the concrete face (0.9 m from the hatch)", round(cyc_c.area, 2), "", "", DEPTH,
            round(cyc_c.area * DEPTH, 2)])
@@ -112,36 +112,36 @@ for cyc_r in (cyc, cyc_c):
     for (p, n), a in zip(names, ac):
         b = a - p.area
         rows_.append(dict(name=n, af=p.area, ac=a, band=b, exc0=p.area * H, exc1=a * H, dexc=b * H,
-                          lay=a * DEPTH, cyc=a * DEPTH, fill=b * H, tot=b * H + a * DEPTH))
+                          cyc=a * DEPTH, fill=b * (TOP - CTOP)))
     detail.append(rows_)
 for title, rows_ in (("Detail (offset from hatch)", detail[0]), ("Detail (offset from concrete)", detail[1])):
     wd = wb.create_sheet(title)
     wd.append([f"Area 2 hatched footings - excavation {TOP} -> {FBL} ({H:.1f} m), cyclopean {DEPTH} m "
-               f"({FBL} -> {FBL - DEPTH}); offset {'1.0 m from the hatch (blinding) outline' if 'hatch' in title else '1.0 m from the concrete face (0.9 m from the hatch)'}; "
+               f"({FBL} -> {CTOP}, footings on top at {CTOP}); offset {'1.0 m from the hatch (blinding) outline' if 'hatch' in title else '1.0 m from the concrete face (0.9 m from the hatch)'}; "
                "no offset on the retaining-wall outer face"])
     wd.append([])
     wd.append(["Footing", "Blinding area (m²)", "Cyclopean area (m²)", "Offset band (m²)",
                f"Excavation before - blinding x {H:.1f} (m³)", f"Excavation after - cyclopean x {H:.1f} (m³)",
-               "Difference to 1118 (m³)", f"Cyclopean layer excavation x {DEPTH} (m³)", "Total extra excavation (m³)",
-               "Cyclopean concrete (m³)", f"Extra backfill - band x {H:.1f} (m³)"])
+               "Extra excavation = difference to 1118 (m³)",
+               "Cyclopean concrete (m³)", f"Extra backfill - band x {TOP - CTOP:.1f} ({CTOP} -> {TOP}) (m³)"])
     for c in wd[wd.max_row]:
         c.font = Font(bold=True, color="FFFFFF"); c.fill = PatternFill("solid", fgColor="305496")
         c.alignment = openpyxl.styles.Alignment(wrap_text=True, vertical="center")
-    keys = ["af", "ac", "band", "exc0", "exc1", "dexc", "lay", "tot", "cyc", "fill"]
+    keys = ["af", "ac", "band", "exc0", "exc1", "dexc", "cyc", "fill"]
     for r in rows_:
         wd.append([r["name"]] + [round(r[k], 2) for k in keys])
     wd.append(["TOTAL"] + [round(sum(r[k] for r in rows_), 2) for k in keys])
     for c in wd[wd.max_row]: c.font = Font(bold=True)
     wd.column_dimensions["A"].width = 38
-    for col in "BCDEFGHIJK": wd.column_dimensions[col].width = 15
+    for col in "BCDEFGHI": wd.column_dimensions[col].width = 15
     wd.row_dimensions[3].height = 62
     wd.freeze_panes = "B4"
 wb.move_sheet("Detail (offset from hatch)", offset=-2); wb.move_sheet("Detail (offset from concrete)", offset=-2)
 wb.active = 0
 wb.save("cyclopean.xlsx")
 for rows_ in detail:
-    for r in rows_: print(r["name"], *[round(r[k], 2) for k in ("af", "ac", "band", "exc0", "exc1", "dexc", "lay", "tot", "fill")])
-    print("TOTAL", *[round(sum(r[k] for r in rows_), 2) for k in ("af", "ac", "band", "exc0", "exc1", "dexc", "lay", "tot", "fill")])
+    for r in rows_: print(r["name"], *[round(r[k], 2) for k in ("af", "ac", "band", "exc0", "exc1", "dexc", "cyc", "fill")])
+    print("TOTAL", *[round(sum(r[k] for r in rows_), 2) for k in ("af", "ac", "band", "exc0", "exc1", "dexc", "cyc", "fill")])
 
 out = ezdxf.new("R2018"); om = out.modelspace()
 out.layers.add("FOOTINGS-HATCHED", color=8); out.layers.add("CYCLOPEAN", color=1)

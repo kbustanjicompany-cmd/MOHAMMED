@@ -154,6 +154,51 @@ for i, (t, col, u) in enumerate(items):
     for j, (nm, rt) in enumerate((S1, S2)):
         cell(S, rr, 3 + j, f"='{nm}'!{col}{rt}", NUM, fill=f, bold=col in key, color="008000")
     cell(S, rr, 5, u, fill=f)
+
+# ---------------- comparison sheet: before (excavation over the blinding) vs after (over the cyclopean)
+C = wb.create_sheet("المقارنة", 1)
+setup(C, {"A": 2, "B": 5, "C": 38, **{k: 13 for k in "DEFGHIJKLM"}, "N": 2})
+title(C, "B2:M2", "جدول مقارنة: قبل (الحفر على مساحة النظافة) – بعد (الحفر على مساحة السيكلوبين)",
+      "الإزاحة 1 م من وجه الخرسانة – الحفر من 1120.9 إلى 1118.0 – السيكلوبين من 1118.0 إلى 1118.5 – الردم من 1118.5 إلى 1120.9")
+grp = [("B4:C4", ""), ("D4:F4", "المساحة (م²)"), ("G4:J4", "الحفر (م³)"), ("K4:K4", "السيكلوبين (م³)"), ("L4:M4", "الردم (م³)")]
+for rng, t in grp:
+    if ":" in rng and rng.split(":")[0] != rng.split(":")[1]: C.merge_cells(rng)
+    c = C[rng.split(":")[0]]; c.value = t or None
+    c.font = Font(name=F, size=11, bold=True, color="FFFFFF"); c.alignment = center
+    for col in range(openpyxl.utils.column_index_from_string(rng[0]), openpyxl.utils.column_index_from_string(rng.split(":")[1][0]) + 1):
+        C.cell(4, col).fill = PatternFill("solid", fgColor="2F5496"); C.cell(4, col).border = box
+C.row_dimensions[4].height = 24
+head(C, 5, ["م", "القاعدة", "قبل\n(النظافة)", "بعد\n(السيكلوبين)", "الفرق", "قبل", "بعد", "الفرق\n(زيادة)", "نسبة\nالزيادة",
+            "الكمية", "قبل", "بعد\n(الفرق)"], 2)
+D = f"'{S1[0]}'"; r0d = S1[1] - len(ROWS[0])
+n = len(ROWS[0])
+for i in range(n + 1):
+    r = 6 + i; src = r0d + i; tot = i == n
+    f = LIGHT if tot else (BAND if i % 2 else None)
+    if tot:
+        C.merge_cells(start_row=r, start_column=2, end_row=r, end_column=3)
+        cell(C, r, 2, "المجموع", bold=True, fill=f); cell(C, r, 3, None, fill=f)
+    else:
+        cell(C, r, 2, i + 1, fill=f); cell(C, r, 3, ar_name(ROWS[0][i]["name"]), align=right, fill=f)
+    vals = [f"={D}!D{src}", f"={D}!E{src}", f"=E{r}-D{r}", f"={D}!G{src}", f"={D}!H{src}", f"=H{r}-G{r}",
+            f"=I{r}/G{r}", f"={D}!J{src}", 0, f"={D}!K{src}"]
+    for j, v in enumerate(vals):
+        col = 4 + j
+        x = cell(C, r, col, v, "0.0%" if j == 6 else NUM, fill=f, bold=tot or j in (2, 5, 9),
+                 color="008000" if isinstance(v, str) and "!" in v else ("C00000" if j in (2, 5, 9) else "000000"))
+        if tot: x.border = Border(left=thin, right=thin, top=med, bottom=med)
+    if tot: C.cell(r, 2).border = C.cell(r, 3).border = Border(left=thin, right=thin, top=med, bottom=med)
+nn = 6 + n + 2
+for i, t in enumerate(["ملاحظات:",
+                       "• قبل: حفر القواعد على مساحة النظافة فقط (بدون سيكلوبين) – لا يوجد ردم إضافي.",
+                       "• بعد: الحفر على مساحة السيكلوبين (القواعد + 1 م من وجه الخرسانة، بدون إزاحة على الوجه الخارجي للجدار الاستنادي).",
+                       "• الردم بعد = شريط الإزاحة حول القواعد فوق السيكلوبين (من 1118.5 إلى 1120.9)؛ لا يشمل الردم فوق القواعد نفسها.",
+                       "• الأرقام باللون الأحمر هي الفروقات الناتجة عن بند السيكلوبين؛ الأرقام الخضراء مرتبطة بصفحة التفصيل."]):
+    C.merge_cells(start_row=nn + i, start_column=2, end_row=nn + i, end_column=13)
+    c = C.cell(nn + i, 2, t); c.alignment = right
+    c.font = Font(name=F, size=11 if not i else 10, bold=not i, color=NAVY if not i else "404040")
+C.freeze_panes = "D6"
+
 n = r + len(items) + 2
 for i, t in enumerate(["• المعتمد: إزاحة 1 م من وجه الخرسانة (العمود الأول)؛ العمود الثاني للمقارنة فقط.",
                        "• الخلايا الصفراء في المعطيات قابلة للتعديل وتُحدّث كل الجداول تلقائياً."]):

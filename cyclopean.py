@@ -86,6 +86,63 @@ ws.column_dimensions["A"].width = 70
 for col in "BCDEF": ws.column_dimensions[col].width = 12
 wb.save("cyclopean.xlsx")
 
+# ---- detailed table per footing: the cyclopean outline is shared out to the nearest footing
+from shapely import points as _pts, contains_xy as _cxy, distance as _dist
+names = []
+_ri = _pi = 0
+for p in sorted(pieces, key=lambda p: (p not in ret, -p.bounds[3])):
+    if p in ret:
+        _ri += 1; names.append((p, f"Retaining-wall footing - {'north/east' if _ri == 1 else 'south/curve'} part"))
+    else:
+        _pi += 1; names.append((p, f"Pad footing P{_pi}"))
+STEP = 0.05
+def share(region):
+    x0, y0, x1, y1 = region.bounds
+    gx, gy = np.meshgrid(np.arange(x0 + STEP / 2, x1, STEP), np.arange(y0 + STEP / 2, y1, STEP))
+    gx, gy = gx.ravel(), gy.ravel(); m = _cxy(region, gx, gy); gx, gy = gx[m], gy[m]
+    pt = _pts(gx, gy)
+    d = np.vstack([_dist(p, pt) for p, _ in names]); own = d.argmin(axis=0)
+    a = np.bincount(own, minlength=len(names)) * STEP * STEP
+    return a * region.area / a.sum()                  # scale out the grid error
+H = TOP - FBL
+detail = []
+for cyc_r in (cyc, cyc_c):
+    ac = share(cyc_r)
+    rows_ = []
+    for (p, n), a in zip(names, ac):
+        b = a - p.area
+        rows_.append(dict(name=n, af=p.area, ac=a, band=b, exc0=p.area * H, exc1=a * H, dexc=b * H,
+                          lay=a * DEPTH, cyc=a * DEPTH, fill=b * H, tot=b * H + a * DEPTH))
+    detail.append(rows_)
+for title, rows_ in (("Detail (offset from hatch)", detail[0]), ("Detail (offset from concrete)", detail[1])):
+    wd = wb.create_sheet(title)
+    wd.append([f"Area 2 hatched footings - excavation {TOP} -> {FBL} ({H:.1f} m), cyclopean {DEPTH} m "
+               f"({FBL} -> {FBL - DEPTH}); offset {'1.0 m from the hatch (blinding) outline' if 'hatch' in title else '1.0 m from the concrete face (0.9 m from the hatch)'}; "
+               "no offset on the retaining-wall outer face"])
+    wd.append([])
+    wd.append(["Footing", "Blinding area (m²)", "Cyclopean area (m²)", "Offset band (m²)",
+               f"Excavation before - blinding x {H:.1f} (m³)", f"Excavation after - cyclopean x {H:.1f} (m³)",
+               "Difference to 1118 (m³)", f"Cyclopean layer excavation x {DEPTH} (m³)", "Total extra excavation (m³)",
+               "Cyclopean concrete (m³)", f"Extra backfill - band x {H:.1f} (m³)"])
+    for c in wd[wd.max_row]:
+        c.font = Font(bold=True, color="FFFFFF"); c.fill = PatternFill("solid", fgColor="305496")
+        c.alignment = openpyxl.styles.Alignment(wrap_text=True, vertical="center")
+    keys = ["af", "ac", "band", "exc0", "exc1", "dexc", "lay", "tot", "cyc", "fill"]
+    for r in rows_:
+        wd.append([r["name"]] + [round(r[k], 2) for k in keys])
+    wd.append(["TOTAL"] + [round(sum(r[k] for r in rows_), 2) for k in keys])
+    for c in wd[wd.max_row]: c.font = Font(bold=True)
+    wd.column_dimensions["A"].width = 38
+    for col in "BCDEFGHIJK": wd.column_dimensions[col].width = 15
+    wd.row_dimensions[3].height = 62
+    wd.freeze_panes = "B4"
+wb.move_sheet("Detail (offset from hatch)", offset=-2); wb.move_sheet("Detail (offset from concrete)", offset=-2)
+wb.active = 0
+wb.save("cyclopean.xlsx")
+for rows_ in detail:
+    for r in rows_: print(r["name"], *[round(r[k], 2) for k in ("af", "ac", "band", "exc0", "exc1", "dexc", "lay", "tot", "fill")])
+    print("TOTAL", *[round(sum(r[k] for r in rows_), 2) for k in ("af", "ac", "band", "exc0", "exc1", "dexc", "lay", "tot", "fill")])
+
 out = ezdxf.new("R2018"); om = out.modelspace()
 out.layers.add("FOOTINGS-HATCHED", color=8); out.layers.add("CYCLOPEAN", color=1)
 for g in getattr(cyc, "geoms", [cyc]):
@@ -111,6 +168,9 @@ ax.set_aspect("equal"); ax.axis("off")
 ax.set_title(f"Cyclopean concrete under hatched footings (area 2)\n"
              f"area {A_c:.2f} m² x {DEPTH} m = {V_cyc:.2f} m³\n"
              f"extra excavation {V_exc:.2f} m³ — extra backfill {V_fill:.2f} m³", fontsize=12)
+_k = 0
+for p in sorted(pads, key=lambda p: -p.bounds[3]):
+    _k += 1; ax.text(*p.centroid.coords[0], f"P{_k}", ha="center", va="center", fontsize=11, weight="bold", color="white", zorder=5)
 fig.savefig("cyclopean.pdf", bbox_inches="tight"); fig.savefig("cyclopean.png", dpi=80, bbox_inches="tight")
 print(f"footings {A_f:.2f}  cyclopean {A_c:.2f} m² -> {V_cyc:.2f} m³ ; band {band:.2f} ; "
       f"extra exc {V_ex1:.2f}+{V_ex2:.2f}={V_exc:.2f} ; fill {V_fill:.2f} ; check(0.9) {cyc_c.area:.2f}")
